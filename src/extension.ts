@@ -32,6 +32,16 @@ async function install() {
         return;
     }
 
+    /* TODO: do we need to do this?
+
+    Next label kube-system and the opa namespace so that OPA does not control the resources in those namespaces.
+
+    kubectl label ns kube-system openpolicyagent.org/webhook=ignore
+    kubectl label ns opa openpolicyagent.org/webhook=ignore
+
+    (from https://www.openpolicyagent.org/docs/latest/kubernetes-tutorial/#3-deploy-opa-on-top-of-kubernetes)
+    */
+
     const installResult = await longRunning('Installing Open Policy Agent...', () =>
         installInto(helm.api, kubectl.api, 'opa', 'opa')
     );
@@ -53,9 +63,19 @@ async function installInto(helm: k8s.HelmV1, kubectl: k8s.KubectlV1, releaseName
         return ensureNamespaceResult;
     }
 
-    return await withTempFile(devInstallationOptions(), 'yaml', (valuesFile) =>
+    const installResult = await withTempFile(devInstallationOptions(), 'yaml', (valuesFile) =>
         helm.invokeCommand(`install ${releaseName} stable/opa --namespace ${ns} --values ${valuesFile}`)
     );
+    if (!installResult || installResult.code !== 0) {
+        return installResult;
+    }
+
+    // The 'main' configmap that hooks this all up to the admission controller stuff
+    // is *not* part of the Helm chart
+    const hookResult = await withTempFile(admissionControlEntryPoint(), 'yaml', (acFile) =>
+        kubectl.invokeCommand(`--namespace ${ns} create -f ${acFile}`)
+    );
+    return hookResult;
 }
 
 async function ensureNamespace(kubectl: k8s.KubectlV1, ns: string): Promise<k8s.KubectlV1.ShellResult | undefined> {
@@ -69,9 +89,13 @@ async function ensureNamespace(kubectl: k8s.KubectlV1, ns: string): Promise<k8s.
 
 function devInstallationOptions(): string {
     return `
+authz:
+  enabled: false
 mgmt:
   configmapPolicies:
     enabled: true
+    namespaces: ["opa"]
+    requireLabel: false
 rbac:
   rules:
     cluster:
@@ -79,6 +103,37 @@ rbac:
       resources: ["configmaps"]
       verbs: ["get", "list", "watch", "patch", "update"]
 `;
+}
+
+function admissionControlEntryPoint(): string {
+    return `
+apiVersion: v1
+kind: ConfigMap
+metadata:
+    name: opa-default-system-main
+data:
+    main: |
+        package system
+
+        import data.kubernetes.admission
+
+        main = {
+            "apiVersion": "admission.k8s.io/v1beta1",
+            "kind": "AdmissionReview",
+            "response": response,
+        }
+
+        default response = {"allowed": true}
+
+        response = {
+            "allowed": false,
+            "status": {
+                "reason": reason,
+            },
+        } {
+            reason = concat(", ", admission.deny)
+            reason != ""
+        }`;
 }
 
 async function showUnavailable(reason: "version-unknown" | "version-removed" | "extension-not-available") {
