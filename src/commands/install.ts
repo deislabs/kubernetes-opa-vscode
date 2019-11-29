@@ -32,7 +32,7 @@ export async function install() {
 
     const reason = installResult ? installResult.stderr : 'unable to run command';
     // TODO: possibly worth trapping for the case where OPA is already installed to give better message
-    vscode.window.showInformationMessage(`Failed to install Open Policy Agent: ${reason}`);
+    vscode.window.showErrorMessage(`Failed to install Open Policy Agent: ${reason}`);
 }
 
 async function installInto(helm: k8s.HelmV1, kubectl: k8s.KubectlV1, releaseName: string, ns: string): Promise<k8s.KubectlV1.ShellResult | k8s.HelmV1.ShellResult | undefined> {
