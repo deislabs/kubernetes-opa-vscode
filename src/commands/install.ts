@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as k8s from 'vscode-kubernetes-tools-api';
 import { longRunning } from '../utils/host';
 import { withTempFile } from '../utils/tempfile';
+import { OPA_HELM_RELEASE_NAME, OPA_NAMESPACE } from '../opa';
 
 export async function install() {
     const helm = await k8s.extension.helm.v1;
@@ -21,7 +22,7 @@ export async function install() {
     }
 
     const installResult = await longRunning('Installing Open Policy Agent...', () =>
-        installInto(helm.api, kubectl.api, 'opa', 'opa')
+        installInto(helm.api, kubectl.api, OPA_HELM_RELEASE_NAME, OPA_NAMESPACE)
     );
 
     if (installResult && installResult.code === 0) {
@@ -31,8 +32,11 @@ export async function install() {
     }
 
     const reason = installResult ? installResult.stderr : 'unable to run command';
-    // TODO: possibly worth trapping for the case where OPA is already installed to give better message
-    vscode.window.showErrorMessage(`Failed to install Open Policy Agent: ${reason}`);
+    if (reason.includes('cannot re-use a name that is still in use')) {
+        vscode.window.showInformationMessage(`Open Policy Agent appears to be already installed - you can check the '${OPA_HELM_RELEASE_NAME}' Helm release to be sure`);
+    } else {
+        vscode.window.showErrorMessage(`Failed to install Open Policy Agent: ${reason}`);
+    }
 }
 
 async function installInto(helm: k8s.HelmV1, kubectl: k8s.KubectlV1, releaseName: string, ns: string): Promise<k8s.KubectlV1.ShellResult | k8s.HelmV1.ShellResult | undefined> {
