@@ -32,16 +32,6 @@ async function install() {
         return;
     }
 
-    /* TODO: do we need to do this?
-
-    Next label kube-system and the opa namespace so that OPA does not control the resources in those namespaces.
-
-    kubectl label ns kube-system openpolicyagent.org/webhook=ignore
-    kubectl label ns opa openpolicyagent.org/webhook=ignore
-
-    (from https://www.openpolicyagent.org/docs/latest/kubernetes-tutorial/#3-deploy-opa-on-top-of-kubernetes)
-    */
-
     const installResult = await longRunning('Installing Open Policy Agent...', () =>
         installInto(helm.api, kubectl.api, 'opa', 'opa')
     );
@@ -61,6 +51,13 @@ async function installInto(helm: k8s.HelmV1, kubectl: k8s.KubectlV1, releaseName
     const ensureNamespaceResult = await ensureNamespace(kubectl, ns);
     if (!ensureNamespaceResult || ensureNamespaceResult.code !== 0) {
         return ensureNamespaceResult;
+    }
+
+    for (const protectedNamespace of ['kube-system', ns]) {
+        const labelResult = await kubectl.invokeCommand(`label ns ${protectedNamespace} openpolicyagent.org/webhook=ignore`);
+        if (!labelResult || labelResult.code !== 0) {
+            return labelResult;
+        }
     }
 
     const installResult = await withTempFile(devInstallationOptions(), 'yaml', (valuesFile) =>
