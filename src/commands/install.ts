@@ -42,7 +42,7 @@ async function installInto(helm: k8s.HelmV1, kubectl: k8s.KubectlV1, releaseName
     }
 
     for (const protectedNamespace of ['kube-system', ns]) {
-        const labelResult = await kubectl.invokeCommand(`label ns ${protectedNamespace} openpolicyagent.org/webhook=ignore`);
+        const labelResult = await kubectl.invokeCommand(`label ns ${protectedNamespace} openpolicyagent.org/webhook=ignore --overwrite`);
         if (!labelResult || labelResult.code !== 0) {
             return labelResult;
         }
