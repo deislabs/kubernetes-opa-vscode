@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as k8s from 'vscode-kubernetes-tools-api';
 import { longRunning } from './utils/host';
+import { withTempFile } from './utils/tempfile';
 
 export function activate(context: vscode.ExtensionContext) {
 
@@ -52,7 +53,9 @@ async function installInto(helm: k8s.HelmV1, kubectl: k8s.KubectlV1, releaseName
         return ensureNamespaceResult;
     }
 
-    return helm.invokeCommand(`install ${releaseName} stable/opa --namespace ${ns}`);
+    return await withTempFile(devInstallationOptions(), 'yaml', (valuesFile) =>
+        helm.invokeCommand(`install ${releaseName} stable/opa --namespace ${ns} --values ${valuesFile}`)
+    );
 }
 
 async function ensureNamespace(kubectl: k8s.KubectlV1, ns: string): Promise<k8s.KubectlV1.ShellResult | undefined> {
@@ -62,6 +65,20 @@ async function ensureNamespace(kubectl: k8s.KubectlV1, ns: string): Promise<k8s.
     }
 
     return await kubectl.invokeCommand(`create namespace ${ns}`);
+}
+
+function devInstallationOptions(): string {
+    return `
+mgmt:
+  configmapPolicies:
+    enabled: true
+rbac:
+  rules:
+    cluster:
+    - apiGroups: [""]
+      resources: ["configmaps"]
+      verbs: ["get", "list", "watch", "patch", "update"]
+`;
 }
 
 async function showUnavailable(reason: "version-unknown" | "version-removed" | "extension-not-available") {
