@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { install } from './commands/install';
+import { deployRego } from './commands/deploy-rego';
 
 export function activate(context: vscode.ExtensionContext) {
 
@@ -12,8 +13,4 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 export function deactivate() {
-}
-
-function deployRego(textEditor: vscode.TextEditor, edit: vscode.TextEditorEdit) {
-    vscode.window.showInformationMessage("quick everybody look like you're deploying");
 }
