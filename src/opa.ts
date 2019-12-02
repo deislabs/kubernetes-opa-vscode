@@ -27,6 +27,15 @@ export function policyStatus(configmap: ConfigMap): PolicyStatus {
     return PolicyStatus.Error;
 }
 
+export function policyIsDevRego(configmap: ConfigMap): boolean {
+    const annotations = configmap.metadata.annotations;
+    if (!annotations) {
+        return false;
+    }
+
+    return !!annotations[OPA_DEV_REGO_ANNOTATION];
+}
+
 export enum PolicyStatus {
     Unevaluated,
     Valid,

@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import * as k8s from 'vscode-kubernetes-tools-api';
-import { isSystemConfigMap, OPA_NAMESPACE, GetConfigMapsResponse, ConfigMap, policyStatus, PolicyStatus } from '../opa';
+import { isSystemConfigMap, OPA_NAMESPACE, GetConfigMapsResponse, ConfigMap, policyStatus, PolicyStatus, policyIsDevRego } from '../opa';
 
 export class OPAPoliciesNodeContributor implements k8s.ClusterExplorerV1.NodeContributor {
     constructor(private readonly kubectl: k8s.KubectlV1, private readonly extensionContext: vscode.ExtensionContext) {}
@@ -70,10 +70,23 @@ class ErrorNode implements k8s.ClusterExplorerV1.Node {
 }
 
 function policyIcon(policy: ConfigMap): string {
+    const statusPart = policyStatusIconPart(policy);
+    const devPart = policyDevRegoPart(policy);
+    return `images/policy-${statusPart}-${devPart}.svg`;
+}
+
+function policyStatusIconPart(policy: ConfigMap): string {
     const status = policyStatus(policy);
     switch (status) {
-        case PolicyStatus.Unevaluated: return 'images/policy-unevaluated.svg';
-        case PolicyStatus.Valid: return 'images/policy-ok.svg';
-        case PolicyStatus.Error: return 'images/policy-error.svg';
+        case PolicyStatus.Unevaluated: return 'unevaluated';
+        case PolicyStatus.Valid: return 'ok';
+        case PolicyStatus.Error: return 'error';
     }
+}
+
+function policyDevRegoPart(policy: ConfigMap): string {
+    if (policyIsDevRego(policy)) {
+        return 'devrego';
+    }
+    return 'nondevrego';
 }
