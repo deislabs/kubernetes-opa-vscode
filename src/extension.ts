@@ -14,10 +14,13 @@ export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(...disposables);
 
     const clusterExplorer = await k8s.extension.clusterExplorer.v1;
-    if (clusterExplorer.available) {
-        clusterExplorer.api.registerNodeContributor(new OPAPoliciesNodeContributor());
-    } else {
+    const kubectl = await k8s.extension.kubectl.v1;
+    if (!clusterExplorer.available) {
         vscode.window.showWarningMessage(`Can't show OPA policies: ${unavailableMessage(clusterExplorer.reason)}`);
+    } else if (!kubectl.available) {
+        vscode.window.showWarningMessage(`Can't show OPA policies: ${unavailableMessage(kubectl.reason)}`);
+    } else {
+        clusterExplorer.api.registerNodeContributor(new OPAPoliciesNodeContributor(kubectl.api));
     }
 }
 
