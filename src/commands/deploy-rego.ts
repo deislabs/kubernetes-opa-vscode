@@ -4,6 +4,7 @@ import * as path from 'path';
 import { showUnavailable, longRunning } from '../utils/host';
 import { Errorable } from '../utils/errorable';
 import { OPA_NAMESPACE, OPA_DEV_REGO_ANNOTATION } from '../opa';
+import { withTempFile } from '../utils/tempfile';
 
 export async function deployRego(textEditor: vscode.TextEditor, edit: vscode.TextEditorEdit) {
     const kubectl = await k8s.extension.kubectl.v1;
@@ -23,8 +24,9 @@ export async function deployRego(textEditor: vscode.TextEditor, edit: vscode.Tex
     }
 
     const filePath = uri.fsPath;
+    const fileContent = textEditor.document.getText();
     const result = await longRunning(`Deploying ${filePath} as config map...`, () =>
-        createOrUpdateConfigMapFrom(filePath, kubectl.api)
+        createOrUpdateConfigMapFrom(filePath, fileContent, kubectl.api)
     );
 
     if (result.succeeded) {
@@ -34,7 +36,7 @@ export async function deployRego(textEditor: vscode.TextEditor, edit: vscode.Tex
     }
 }
 
-async function createOrUpdateConfigMapFrom(filePath: string, kubectl: k8s.KubectlV1): Promise<Errorable<null>> {
+async function createOrUpdateConfigMapFrom(filePath: string, fileContent: string, kubectl: k8s.KubectlV1): Promise<Errorable<null>> {
     const configmapName = path.basename(filePath, '.rego');
 
     const createResult = await kubectl.invokeCommand(`create configmap ${configmapName} --namespace=${OPA_NAMESPACE} --from-file=${filePath}`);
@@ -47,23 +49,40 @@ async function createOrUpdateConfigMapFrom(filePath: string, kubectl: k8s.Kubect
     }
 
     if (createResult && createResult.stderr.includes('(AlreadyExists)')) {
-        return await updateConfigMapFrom(configmapName, filePath, kubectl);
+        return await updateConfigMapFrom(configmapName, filePath, fileContent, kubectl);
     }
 
     const reason = createResult ? createResult.stderr : 'Unable to run kubectl';
     return { succeeded: false, error: [reason] };
 }
 
-async function updateConfigMapFrom(configmapName: string, filePath: string, kubectl: k8s.KubectlV1): Promise<Errorable<null>> {
-    return { succeeded: false, error: ['NOT DONE YET'] };
-    // get the existing resource
-    // check it has the dev flag
-    // modify it
-    // do a replace
+async function updateConfigMapFrom(configmapName: string, filePath: string, fileContent: string, kubectl: k8s.KubectlV1): Promise<Errorable<null>> {
+    const getResult = await kubectl.invokeCommand(`get configmap ${configmapName} --namespace=${OPA_NAMESPACE} -o json`);
+    if (!getResult || getResult.code !== 0) {
+        const reason = getResult ? getResult.stderr : 'unable to run kubectl';
+        return { succeeded: false, error: [reason] };
+    }
 
-    // Per Brendan:
-    // const dataHolderJson = await kubectl.asJson<DataHolder>(`get ${obj.kind.abbreviation} ${obj.name} --namespace=${currentNS} -o json`);
-    // dataHolder.data[fileName] = buff.toString();
-    // const out = JSON.stringify(dataHolder);
-    // await kubectl.invokeAsync(`replace -f - --namespace=${currentNS}`, out);
+    const configmap = JSON.parse(getResult.stdout);
+
+    const hasDevFlag = configmap.metadata && configmap.metadata.annotations && configmap.metadata.annotations[OPA_DEV_REGO_ANNOTATION];
+    if (!hasDevFlag) {
+        // TODO: consider option to publish and be damned!
+        return { succeeded: false, error: [`config map ${configmapName} already exists and is not managed by Visual Studio Code`] };
+    }
+
+    const fileName = path.basename(filePath);  // TODO: should we force the filename on creation, in case kubectl changes its ways?
+    configmap.data[fileName] = fileContent;
+
+    const updated = JSON.stringify(configmap);
+
+    const replaceResult = await withTempFile(updated, 'json', (f) =>
+        kubectl.invokeCommand(`replace -f ${f} --namespace=${OPA_NAMESPACE}`)
+    );
+    if (!replaceResult || replaceResult.code !== 0) {
+        const reason = replaceResult ? replaceResult.stderr : 'unable to run kubectl';
+        return { succeeded: false, error: [reason] };
+    }
+
+    return { succeeded: true, result: null };
 }
