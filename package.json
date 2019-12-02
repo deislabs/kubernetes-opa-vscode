@@ -11,7 +11,8 @@
         "Other"
     ],
     "activationEvents": [
-        "onCommand:opak8s.install"
+        "onCommand:opak8s.install",
+        "onCommand:opak8s.deployRego"
     ],
     "main": "./out/extension",
     "contributes": {
@@ -19,6 +20,10 @@
             {
                 "command": "opak8s.install",
                 "title": "Install Open Policy Agent"
+            },
+            {
+                "command": "opak8s.deployRego",
+                "title": "Deploy Policy to Kubernetes"
             }
         ],
         "menus": {
@@ -27,6 +32,19 @@
                     "command": "opak8s.install",
                     "group": "80",
                     "when": "viewItem =~ /vsKubernetes\\.\\w*cluster($|[^.])/i"
+                }
+            ],
+            "editor/context": [
+                {
+                    "command": "opak8s.deployRego",
+                    "group": "99@1",
+                    "when": "editorLangId == rego"
+                }
+            ],
+            "commandPalette": [
+                {
+                    "command": "opak8s.deployRego",
+                    "when": "editorLangId == rego"
                 }
             ]
         }

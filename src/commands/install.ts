@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import * as k8s from 'vscode-kubernetes-tools-api';
-import { longRunning } from '../utils/host';
+import { longRunning, showUnavailable } from '../utils/host';
 import { withTempFile } from '../utils/tempfile';
 import { OPA_HELM_RELEASE_NAME, OPA_NAMESPACE } from '../opa';
 
@@ -123,16 +123,4 @@ data:
             reason = concat(", ", admission.deny)
             reason != ""
         }`;
-}
-
-async function showUnavailable(reason: "version-unknown" | "version-removed" | "extension-not-available") {
-    await vscode.window.showErrorMessage(unavailableMessage(reason));
-}
-
-function unavailableMessage(reason: "version-unknown" | "version-removed" | "extension-not-available"): string {
-    switch (reason) {
-        case "extension-not-available": return "Cannot run command: please check the 'Kubernetes' extension is installed";
-        case "version-removed": return "Cannot run command: please check for updates to the 'Open Policy Agent for Kubernetes' extension";
-        case "version-unknown": return "Cannot run command: please check for updates to the 'Kubernetes' extension";
-    }
 }
