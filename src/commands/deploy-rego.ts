@@ -41,7 +41,7 @@ export async function deployRego(textEditor: vscode.TextEditor, edit: vscode.Tex
 async function createOrUpdateConfigMapFrom(deploymentInfo: DeploymentInfo, kubectl: k8s.KubectlV1): Promise<Errorable<null>> {
     const createResult = await kubectl.invokeCommand(`create configmap ${deploymentInfo.configmapName} --namespace=${OPA_NAMESPACE} --from-file=${deploymentInfo.fileName}=${deploymentInfo.filePath}`);
     if (createResult && createResult.code === 0) {
-        const annotateResult = await kubectl.invokeCommand(`annotate configmap ${deploymentInfo.configmapName} ${OPA_DEV_REGO_ANNOTATION}=true`);
+        const annotateResult = await kubectl.invokeCommand(`annotate configmap ${deploymentInfo.configmapName} --namespace=${OPA_NAMESPACE} ${OPA_DEV_REGO_ANNOTATION}=true`);
         if (!annotateResult || annotateResult.code !== 0) {
             return { succeeded: false, error: ['The policy was deployed successfully but you may not be able to update it'] };
         }
