@@ -1,9 +1,9 @@
 import * as vscode from 'vscode';
 import * as k8s from 'vscode-kubernetes-tools-api';
-import { isSystemConfigMap, OPA_NAMESPACE } from '../opa';
+import { isSystemConfigMap, OPA_NAMESPACE, GetConfigMapsResponse, ConfigMap, policyStatus, PolicyStatus } from '../opa';
 
 export class OPAPoliciesNodeContributor implements k8s.ClusterExplorerV1.NodeContributor {
-    constructor(private readonly kubectl: k8s.KubectlV1) {}
+    constructor(private readonly kubectl: k8s.KubectlV1, private readonly extensionContext: vscode.ExtensionContext) {}
     contributesChildren(parent: k8s.ClusterExplorerV1.ClusterExplorerNode | undefined): boolean {
         return !!parent && parent.nodeType === 'context';
     }
@@ -13,12 +13,12 @@ export class OPAPoliciesNodeContributor implements k8s.ClusterExplorerV1.NodeCon
             return [];
         }
 
-        return [new PoliciesFolderNode(this.kubectl)];  // TODO: consider showing only if opa namespace exists or something like that
+        return [new PoliciesFolderNode(this.kubectl, this.extensionContext)];  // TODO: consider showing only if opa namespace exists or something like that
     }
 }
 
 class PoliciesFolderNode implements k8s.ClusterExplorerV1.Node {
-    constructor(private readonly kubectl: k8s.KubectlV1) {}
+    constructor(private readonly kubectl: k8s.KubectlV1, private readonly extensionContext: vscode.ExtensionContext) {}
     async getChildren(): Promise<k8s.ClusterExplorerV1.Node[]> {
         const sr = await this.kubectl.invokeCommand(`get configmap --namespace ${OPA_NAMESPACE} -o json`);
         if (!sr || sr.code !== 0) {
@@ -28,8 +28,8 @@ class PoliciesFolderNode implements k8s.ClusterExplorerV1.Node {
         const configmaps: GetConfigMapsResponse = JSON.parse(sr.stdout);
         if (configmaps.items) {
             return configmaps.items
-                             .filter((cm) => !isSystemConfigMap(cm.metadata.name))
-                             .map((cm) => new PolicyNode(cm));
+                             .filter((cm) => !isSystemConfigMap(cm))
+                             .map((cm) => new PolicyNode(cm, this.extensionContext));
         }
 
         return [];
@@ -40,12 +40,14 @@ class PoliciesFolderNode implements k8s.ClusterExplorerV1.Node {
 }
 
 class PolicyNode implements k8s.ClusterExplorerV1.Node {
-    constructor(private readonly configmap: ConfigMap) { }
+    constructor(private readonly configmap: ConfigMap, private readonly extensionContext: vscode.ExtensionContext) { }
     async getChildren(): Promise<k8s.ClusterExplorerV1.Node[]> {
         return [];
     }
     getTreeItem(): vscode.TreeItem {
-        return new vscode.TreeItem(this.configmap.metadata.name);
+        const treeItem = new vscode.TreeItem(this.configmap.metadata.name);
+        treeItem.iconPath = this.extensionContext.asAbsolutePath(policyIcon(this.configmap));
+        return treeItem;
     }
 }
 
@@ -67,14 +69,11 @@ class ErrorNode implements k8s.ClusterExplorerV1.Node {
     }
 }
 
-interface GetConfigMapsResponse {
-    readonly items?: ReadonlyArray<ConfigMap>;
-}
-
-interface ConfigMap {
-    readonly data: { [key: string]: string };  // maps file names to policy text
-    readonly metadata: {
-        readonly name: string;
-        readonly annotations: { [key: string]: string }
-    };
+function policyIcon(policy: ConfigMap): string {
+    const status = policyStatus(policy);
+    switch (status) {
+        case PolicyStatus.Unevaluated: return 'images/policy-unevaluated.svg';
+        case PolicyStatus.Valid: return 'images/policy-ok.svg';
+        case PolicyStatus.Error: return 'images/policy-error.svg';
+    }
 }

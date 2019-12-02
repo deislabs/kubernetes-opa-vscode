@@ -20,7 +20,7 @@ export async function activate(context: vscode.ExtensionContext) {
     } else if (!kubectl.available) {
         vscode.window.showWarningMessage(`Can't show OPA policies: ${unavailableMessage(kubectl.reason)}`);
     } else {
-        clusterExplorer.api.registerNodeContributor(new OPAPoliciesNodeContributor(kubectl.api));
+        clusterExplorer.api.registerNodeContributor(new OPAPoliciesNodeContributor(kubectl.api, context));
     }
 }
 
