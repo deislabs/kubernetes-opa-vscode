@@ -3,12 +3,23 @@
     "displayName": "Open Policy Agent for Kubernetes",
     "description": "Work with Open Policy Agent as a Kubernetes admission controller",
     "version": "0.0.1",
+    "preview": true,
     "publisher": "ms-kubernetes-tools",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/deislabs/kubernetes-opa-vscode"
+    },
     "engines": {
         "vscode": "^1.40.0"
     },
     "categories": [
         "Other"
+    ],
+    "keywords": [
+        "kubernetes",
+        "open policy agent",
+        "opa"
     ],
     "activationEvents": [
         "onCommand:opak8s.install",
@@ -66,7 +77,7 @@
         "@types/node": "^8.10.25",
         "@types/tmp": "^0.1.0",
         "tslint": "^5.8.0",
-        "typescript": "^2.6.1",
+        "typescript": "^3.7.2",
         "vscode": "^1.1.6"
     },
     "extensionDependencies": [
