@@ -1,0 +1,12 @@
+<svg
+    xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+    <style>
+        .icon-canvas-transparent{opacity:0;fill:#f6f6f6}
+        .icon-vs-out{fill:#f6f6f6}
+        .icon-vs-status{fill:#933}
+    </style>
+    <path class="icon-canvas-transparent" d="M16 16H0V0h16v16z" id="canvas"/>
+    <circle class="icon-vs-out" r="4" cy="8" cx="10"/>
+    <circle class="icon-vs-status" r="3" cy="8" cx="10"/>
+
+</svg>

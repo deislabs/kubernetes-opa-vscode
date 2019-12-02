@@ -12,7 +12,8 @@
     ],
     "activationEvents": [
         "onCommand:opak8s.install",
-        "onCommand:opak8s.deployRego"
+        "onCommand:opak8s.deployRego",
+        "onView:extension.vsKubernetesExplorer"
     ],
     "main": "./out/extension",
     "contributes": {
