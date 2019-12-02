@@ -25,23 +25,23 @@ export async function deployRego(textEditor: vscode.TextEditor, edit: vscode.Tex
 
     const filePath = uri.fsPath;
     const fileContent = textEditor.document.getText();
-    const result = await longRunning(`Deploying ${filePath} as config map...`, () =>
-        createOrUpdateConfigMapFrom(filePath, fileContent, kubectl.api)
+    const deploymentInfo = new DeploymentInfo(filePath, fileContent);
+
+    const result = await longRunning(`Deploying ${filePath} as config map ${deploymentInfo.configmapName}...`, () =>
+        createOrUpdateConfigMapFrom(deploymentInfo, kubectl.api)
     );
 
     if (result.succeeded) {
-        await vscode.window.showInformationMessage(`Deployed ${filePath} as config map`);
+        await vscode.window.showInformationMessage(`Deployed ${filePath} as config map ${deploymentInfo.configmapName}`);
     } else {
         await vscode.window.showErrorMessage(`Error deploying ${filePath} as config map: ${result.error[0]}`);
     }
 }
 
-async function createOrUpdateConfigMapFrom(filePath: string, fileContent: string, kubectl: k8s.KubectlV1): Promise<Errorable<null>> {
-    const configmapName = path.basename(filePath, '.rego');
-
-    const createResult = await kubectl.invokeCommand(`create configmap ${configmapName} --namespace=${OPA_NAMESPACE} --from-file=${filePath}`);
+async function createOrUpdateConfigMapFrom(deploymentInfo: DeploymentInfo, kubectl: k8s.KubectlV1): Promise<Errorable<null>> {
+    const createResult = await kubectl.invokeCommand(`create configmap ${deploymentInfo.configmapName} --namespace=${OPA_NAMESPACE} --from-file=${deploymentInfo.fileName}=${deploymentInfo.filePath}`);
     if (createResult && createResult.code === 0) {
-        const annotateResult = await kubectl.invokeCommand(`annotate configmap ${configmapName} ${OPA_DEV_REGO_ANNOTATION}=true`);
+        const annotateResult = await kubectl.invokeCommand(`annotate configmap ${deploymentInfo.configmapName} ${OPA_DEV_REGO_ANNOTATION}=true`);
         if (!annotateResult || annotateResult.code !== 0) {
             return { succeeded: false, error: ['The policy was deployed successfully but you may not be able to update it'] };
         }
@@ -49,15 +49,15 @@ async function createOrUpdateConfigMapFrom(filePath: string, fileContent: string
     }
 
     if (createResult && createResult.stderr.includes('(AlreadyExists)')) {
-        return await updateConfigMapFrom(configmapName, filePath, fileContent, kubectl);
+        return await updateConfigMapFrom(deploymentInfo, kubectl);
     }
 
     const reason = createResult ? createResult.stderr : 'Unable to run kubectl';
     return { succeeded: false, error: [reason] };
 }
 
-async function updateConfigMapFrom(configmapName: string, filePath: string, fileContent: string, kubectl: k8s.KubectlV1): Promise<Errorable<null>> {
-    const getResult = await kubectl.invokeCommand(`get configmap ${configmapName} --namespace=${OPA_NAMESPACE} -o json`);
+async function updateConfigMapFrom(deploymentInfo: DeploymentInfo, kubectl: k8s.KubectlV1): Promise<Errorable<null>> {
+    const getResult = await kubectl.invokeCommand(`get configmap ${deploymentInfo.configmapName} --namespace=${OPA_NAMESPACE} -o json`);
     if (!getResult || getResult.code !== 0) {
         const reason = getResult ? getResult.stderr : 'unable to run kubectl';
         return { succeeded: false, error: [reason] };
@@ -68,11 +68,10 @@ async function updateConfigMapFrom(configmapName: string, filePath: string, file
     const hasDevFlag = configmap.metadata && configmap.metadata.annotations && configmap.metadata.annotations[OPA_DEV_REGO_ANNOTATION];
     if (!hasDevFlag) {
         // TODO: consider option to publish and be damned!
-        return { succeeded: false, error: [`config map ${configmapName} already exists and is not managed by Visual Studio Code`] };
+        return { succeeded: false, error: [`config map ${deploymentInfo.configmapName} already exists and is not managed by Visual Studio Code`] };
     }
 
-    const fileName = path.basename(filePath);  // TODO: should we force the filename on creation, in case kubectl changes its ways?
-    configmap.data[fileName] = fileContent;
+    configmap.data[deploymentInfo.fileName] = deploymentInfo.fileContent;
 
     const updated = JSON.stringify(configmap);
 
@@ -85,4 +84,10 @@ async function updateConfigMapFrom(configmapName: string, filePath: string, file
     }
 
     return { succeeded: true, result: null };
+}
+
+class DeploymentInfo {
+    constructor(readonly filePath: string, readonly fileContent: string) {}
+    get fileName() { return path.basename(this.filePath); }
+    get configmapName() { return path.basename(this.filePath, '.rego'); }
 }
