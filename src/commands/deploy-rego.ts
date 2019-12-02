@@ -1,6 +1,9 @@
 import * as vscode from 'vscode';
 import * as k8s from 'vscode-kubernetes-tools-api';
-import { showUnavailable } from '../utils/host';
+import * as path from 'path';
+import { showUnavailable, longRunning } from '../utils/host';
+import { Errorable } from '../utils/errorable';
+import { OPA_NAMESPACE, OPA_DEV_REGO_ANNOTATION } from '../opa';
 
 export async function deployRego(textEditor: vscode.TextEditor, edit: vscode.TextEditorEdit) {
     const kubectl = await k8s.extension.kubectl.v1;
@@ -19,27 +22,48 @@ export async function deployRego(textEditor: vscode.TextEditor, edit: vscode.Tex
         return;
     }
 
-    await createOrUpdateConfigMapFrom(uri);
+    const filePath = uri.fsPath;
+    const result = await longRunning(`Deploying ${filePath} as config map...`, () =>
+        createOrUpdateConfigMapFrom(filePath, kubectl.api)
+    );
+
+    if (result.succeeded) {
+        await vscode.window.showInformationMessage(`Deployed ${filePath} as config map`);
+    } else {
+        await vscode.window.showErrorMessage(`Error deploying ${filePath} as config map: ${result.error[0]}`);
+    }
 }
-async function createOrUpdateConfigMapFrom(uri: vscode.Uri) {
-    // kubectl create configmap somename --from-file=path/to/file ... --save-config=true?
 
-    // TODO: what if it already exists?
-    // DIAGNOSIS: kubectl create configmap returns code 1 and stderr contains the
-    // string "(AlreadyExists)"
-    // --save-config means we can apply a change but that requires
-    // us to compose the YAML in which case we might as well
-    // do that every time.  The way Brendan does this in the k8s extension is to
-    // download the CM from the cluster, modify the JSON, and do a replace...
+async function createOrUpdateConfigMapFrom(filePath: string, kubectl: k8s.KubectlV1): Promise<Errorable<null>> {
+    const configmapName = path.basename(filePath, '.rego');
 
+    const createResult = await kubectl.invokeCommand(`create configmap ${configmapName} --namespace=${OPA_NAMESPACE} --from-file=${filePath}`);
+    if (createResult && createResult.code === 0) {
+        const annotateResult = await kubectl.invokeCommand(`annotate configmap ${configmapName} ${OPA_DEV_REGO_ANNOTATION}=true`);
+        if (!annotateResult || annotateResult.code !== 0) {
+            return { succeeded: false, error: ['The policy was deployed successfully but you may not be able to update it'] };
+        }
+        return { succeeded: true, result: null };
+    }
+
+    if (createResult && createResult.stderr.includes('(AlreadyExists)')) {
+        return await updateConfigMapFrom(configmapName, filePath, kubectl);
+    }
+
+    const reason = createResult ? createResult.stderr : 'Unable to run kubectl';
+    return { succeeded: false, error: [reason] };
+}
+
+async function updateConfigMapFrom(configmapName: string, filePath: string, kubectl: k8s.KubectlV1): Promise<Errorable<null>> {
+    return { succeeded: false, error: ['NOT DONE YET'] };
+    // get the existing resource
+    // check it has the dev flag
+    // modify it
+    // do a replace
+
+    // Per Brendan:
     // const dataHolderJson = await kubectl.asJson<DataHolder>(`get ${obj.kind.abbreviation} ${obj.name} --namespace=${currentNS} -o json`);
     // dataHolder.data[fileName] = buff.toString();
     // const out = JSON.stringify(dataHolder);
     // await kubectl.invokeAsync(`replace -f - --namespace=${currentNS}`, out);
-
-    // TODO: want to annotate it so we know it was a dev deployment from the extension
-    // kubectl annotate configmap somename "k8s-opa-vscode.hestia.cc/devrego=true"
-    // NOTE: if we synthesise the YAML we can do this atomically
-
-    await vscode.window.showInformationMessage(`quick everybody look like you're deploying ${uri.toString()}`);
 }
