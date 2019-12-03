@@ -1,5 +1,7 @@
 # Change Log
 
-## [Unreleased]
+## 0.0.1
 
-- Initial release
+* Install Open Policy Agent as an admission controller
+* Deploy `.rego` files to the `opa` namespace to participate in admission control
+* List policies in the Kubernetes cluster explorer without changing to the `opa` namespace
