@@ -3,7 +3,7 @@ import * as k8s from 'vscode-kubernetes-tools-api';
 import { install } from './commands/install';
 import { deployRego } from './commands/deploy-rego';
 import { unavailableMessage } from './utils/host';
-import { PolicyBrowser } from './ui/policies-node-contributor';
+import { PolicyBrowser } from './ui/policy-browser';
 import { deletePolicy } from './commands/delete-policy';
 
 export async function activate(context: vscode.ExtensionContext) {

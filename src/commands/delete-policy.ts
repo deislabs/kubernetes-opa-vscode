@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as k8s from 'vscode-kubernetes-tools-api';
 import { unavailableMessage, confirm, longRunning } from '../utils/host';
-import { PolicyBrowser } from '../ui/policies-node-contributor';
+import { PolicyBrowser } from '../ui/policy-browser';
 import { policyIsDevRego, ConfigMap, OPA_NAMESPACE } from '../opa';
 
 export async function deletePolicy(target: any) {
