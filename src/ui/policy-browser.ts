@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as k8s from 'vscode-kubernetes-tools-api';
 import { isSystemConfigMap, OPA_NAMESPACE, GetConfigMapsResponse, ConfigMap, policyStatus, PolicyStatus, policyIsDevRego } from '../opa';
+import { definedOf } from '../utils/array';
 
 export namespace PolicyBrowser {
     export function create(kubectl: k8s.KubectlV1, extensionContext: vscode.ExtensionContext): k8s.ClusterExplorerV1.NodeContributor {
@@ -82,7 +83,24 @@ class PolicyNode implements k8s.ClusterExplorerV1.Node, PolicyBrowser.PolicyNode
         const treeItem = new vscode.TreeItem(this.configmap.metadata.name);
         treeItem.iconPath = this.extensionContext.asAbsolutePath(policyIcon(this.configmap));
         treeItem.contextValue = 'opak8s.policy';
+        treeItem.tooltip = this.tooltip();
         return treeItem;
+    }
+    private tooltip(): string {
+        return definedOf(this.statusTooltipPart(), this.devRegoTooltipPart()).join('\n');
+    }
+    private statusTooltipPart(): string {
+        switch (policyStatus(this.configmap)) {
+            case PolicyStatus.Error: return 'Policy has errors';
+            case PolicyStatus.Valid: return 'Valid';
+            case PolicyStatus.Unevaluated: return 'Not evaluated by OPA';
+        }
+    }
+    private devRegoTooltipPart(): string | undefined {
+        if (policyIsDevRego(this.configmap)) {
+            return undefined;
+        }
+        return 'Not deployed by OPA VS Code extension';
     }
 }
 
