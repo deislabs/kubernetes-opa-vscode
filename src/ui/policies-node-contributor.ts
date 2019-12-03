@@ -17,6 +17,10 @@ export class OPAPoliciesNodeContributor implements k8s.ClusterExplorerV1.NodeCon
     }
 }
 
+export interface PolicyTreeNode {
+    readonly configmap: ConfigMap;
+}
+
 class PoliciesFolderNode implements k8s.ClusterExplorerV1.Node {
     constructor(private readonly kubectl: k8s.KubectlV1, private readonly extensionContext: vscode.ExtensionContext) {}
     async getChildren(): Promise<k8s.ClusterExplorerV1.Node[]> {
@@ -39,14 +43,15 @@ class PoliciesFolderNode implements k8s.ClusterExplorerV1.Node {
     }
 }
 
-class PolicyNode implements k8s.ClusterExplorerV1.Node {
-    constructor(private readonly configmap: ConfigMap, private readonly extensionContext: vscode.ExtensionContext) { }
+class PolicyNode implements k8s.ClusterExplorerV1.Node, PolicyTreeNode {
+    constructor(readonly configmap: ConfigMap, private readonly extensionContext: vscode.ExtensionContext) { }
     async getChildren(): Promise<k8s.ClusterExplorerV1.Node[]> {
         return [];
     }
     getTreeItem(): vscode.TreeItem {
         const treeItem = new vscode.TreeItem(this.configmap.metadata.name);
         treeItem.iconPath = this.extensionContext.asAbsolutePath(policyIcon(this.configmap));
+        treeItem.contextValue = 'opak8s.policy';
         return treeItem;
     }
 }
