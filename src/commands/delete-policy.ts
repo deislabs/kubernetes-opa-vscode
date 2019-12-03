@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as k8s from 'vscode-kubernetes-tools-api';
 import { unavailableMessage, confirm, longRunning } from '../utils/host';
-import { PolicyTreeNode } from '../ui/policies-node-contributor';  // TODO: consider how to decouple
+import { PolicyBrowser } from '../ui/policies-node-contributor';
 import { policyIsDevRego, ConfigMap, OPA_NAMESPACE } from '../opa';
 
 export async function deletePolicy(target: any) {
@@ -15,10 +15,9 @@ export async function deletePolicy(target: any) {
         return;
     }
 
-    const node = clusterExplorer.api.resolveCommandTarget(target);
-    if (node && node.nodeType === 'extension') {
-        const policyNode = target.impl /* something not great in the API here */ as PolicyTreeNode;  // TODO: tighten up the design here
-        const policy = policyNode.configmap;
+    const node = PolicyBrowser.resolve(target, clusterExplorer.api);
+    if (node && node.nodeType === 'policy') {
+        const policy = node.configmap;
         await tryDeletePolicy(policy, clusterExplorer.api, kubectl.api);
     }
 }

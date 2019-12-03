@@ -3,7 +3,7 @@ import * as k8s from 'vscode-kubernetes-tools-api';
 import { install } from './commands/install';
 import { deployRego } from './commands/deploy-rego';
 import { unavailableMessage } from './utils/host';
-import { OPAPoliciesNodeContributor } from './ui/policies-node-contributor';
+import { PolicyBrowser } from './ui/policies-node-contributor';
 import { deletePolicy } from './commands/delete-policy';
 
 export async function activate(context: vscode.ExtensionContext) {
@@ -22,7 +22,7 @@ export async function activate(context: vscode.ExtensionContext) {
     } else if (!kubectl.available) {
         vscode.window.showWarningMessage(`Can't show OPA policies: ${unavailableMessage(kubectl.reason)}`);
     } else {
-        clusterExplorer.api.registerNodeContributor(new OPAPoliciesNodeContributor(kubectl.api, context));
+        clusterExplorer.api.registerNodeContributor(PolicyBrowser.create(kubectl.api, context));
     }
 }
 

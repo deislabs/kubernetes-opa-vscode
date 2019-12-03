@@ -2,7 +2,39 @@ import * as vscode from 'vscode';
 import * as k8s from 'vscode-kubernetes-tools-api';
 import { isSystemConfigMap, OPA_NAMESPACE, GetConfigMapsResponse, ConfigMap, policyStatus, PolicyStatus, policyIsDevRego } from '../opa';
 
-export class OPAPoliciesNodeContributor implements k8s.ClusterExplorerV1.NodeContributor {
+export namespace PolicyBrowser {
+    export function create(kubectl: k8s.KubectlV1, extensionContext: vscode.ExtensionContext): k8s.ClusterExplorerV1.NodeContributor {
+        return new PoliciesNodeContributor(kubectl, extensionContext);
+    }
+
+    export function resolve(target: any, clusterExplorer: k8s.ClusterExplorerV1): Node | undefined {
+        const k8snode = clusterExplorer.resolveCommandTarget(target);
+        if (!k8snode || k8snode.nodeType !== 'extension') {
+            return undefined;
+        }
+        const node = target.impl;  // TODO: fix the API
+        if (node.nodeType === 'policy') {
+            return node as PolicyNode;
+        } else if (node.nodeType === 'folder.policies') {
+            return node as PoliciesFolderNode;
+        } else {
+            return undefined;
+        }
+    }
+
+    export interface PolicyNode {
+        readonly nodeType: 'policy';
+        readonly configmap: ConfigMap;
+    }
+
+    export interface PoliciesFolderNode {
+        readonly nodeType: 'folder.policies';
+    }
+
+    export type Node = PolicyNode | PoliciesFolderNode;
+}
+
+class PoliciesNodeContributor implements k8s.ClusterExplorerV1.NodeContributor {
     constructor(private readonly kubectl: k8s.KubectlV1, private readonly extensionContext: vscode.ExtensionContext) {}
     contributesChildren(parent: k8s.ClusterExplorerV1.ClusterExplorerNode | undefined): boolean {
         return !!parent && parent.nodeType === 'context';
@@ -17,12 +49,9 @@ export class OPAPoliciesNodeContributor implements k8s.ClusterExplorerV1.NodeCon
     }
 }
 
-export interface PolicyTreeNode {
-    readonly configmap: ConfigMap;
-}
-
-class PoliciesFolderNode implements k8s.ClusterExplorerV1.Node {
+class PoliciesFolderNode implements k8s.ClusterExplorerV1.Node, PolicyBrowser.PoliciesFolderNode {
     constructor(private readonly kubectl: k8s.KubectlV1, private readonly extensionContext: vscode.ExtensionContext) {}
+    readonly nodeType = 'folder.policies';
     async getChildren(): Promise<k8s.ClusterExplorerV1.Node[]> {
         const sr = await this.kubectl.invokeCommand(`get configmap --namespace ${OPA_NAMESPACE} -o json`);
         if (!sr || sr.code !== 0) {
@@ -43,8 +72,9 @@ class PoliciesFolderNode implements k8s.ClusterExplorerV1.Node {
     }
 }
 
-class PolicyNode implements k8s.ClusterExplorerV1.Node, PolicyTreeNode {
+class PolicyNode implements k8s.ClusterExplorerV1.Node, PolicyBrowser.PolicyNode {
     constructor(readonly configmap: ConfigMap, private readonly extensionContext: vscode.ExtensionContext) { }
+    readonly nodeType = 'policy';
     async getChildren(): Promise<k8s.ClusterExplorerV1.Node[]> {
         return [];
     }
