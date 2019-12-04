@@ -3,6 +3,8 @@ import * as k8s from 'vscode-kubernetes-tools-api';
 import { isSystemConfigMap, OPA_NAMESPACE, GetConfigMapsResponse, ConfigMap, policyStatus, PolicyStatus, policyIsDevRego, policyError } from '../opa';
 import { definedOf } from '../utils/array';
 
+const OPA_TREE_NODE_KEY = 'opak8s_tree_node_8357fa36-5ade-4b9b-b0f4-ac07d6460c5c';
+
 export namespace PolicyBrowser {
     export function create(kubectl: k8s.KubectlV1, extensionContext: vscode.ExtensionContext): k8s.ClusterExplorerV1.NodeContributor {
         return new PoliciesNodeContributor(kubectl, extensionContext);
@@ -10,10 +12,20 @@ export namespace PolicyBrowser {
 
     export function resolve(target: any, clusterExplorer: k8s.ClusterExplorerV1): Node | undefined {
         const k8snode = clusterExplorer.resolveCommandTarget(target);
-        if (!k8snode || k8snode.nodeType !== 'extension') {
+        if (!k8snode) {
+            // this can happen if a node gets passed unwrapped via vscode.TreeItem.command.arguments
+            return typedNode(target);
+        }
+        if (k8snode.nodeType !== 'extension') {
             return undefined;
         }
-        const node = target.impl;  // TODO: fix the API
+        return typedNode(target.impl);  // TODO: fix the API
+    }
+
+    function typedNode(node: any): Node | undefined {
+        if (!node || !node[OPA_TREE_NODE_KEY]) {
+            return undefined;
+        }
         if (node.nodeType === 'policy') {
             return node as PolicyNode;
         } else if (node.nodeType === 'folder.policies') {
@@ -23,12 +35,15 @@ export namespace PolicyBrowser {
         }
     }
 
-    export interface PolicyNode {
+    export interface OPATreeNode {
+        readonly [OPA_TREE_NODE_KEY]: true;
+    }
+    export interface PolicyNode extends OPATreeNode {
         readonly nodeType: 'policy';
         readonly configmap: ConfigMap;
     }
 
-    export interface PoliciesFolderNode {
+    export interface PoliciesFolderNode extends OPATreeNode {
         readonly nodeType: 'folder.policies';
     }
 
@@ -52,6 +67,7 @@ class PoliciesNodeContributor implements k8s.ClusterExplorerV1.NodeContributor {
 
 class PoliciesFolderNode implements k8s.ClusterExplorerV1.Node, PolicyBrowser.PoliciesFolderNode {
     constructor(private readonly kubectl: k8s.KubectlV1, private readonly extensionContext: vscode.ExtensionContext) {}
+    readonly [OPA_TREE_NODE_KEY] = true;
     readonly nodeType = 'folder.policies';
     async getChildren(): Promise<k8s.ClusterExplorerV1.Node[]> {
         const sr = await this.kubectl.invokeCommand(`get configmap --namespace ${OPA_NAMESPACE} -o json`);
@@ -75,6 +91,7 @@ class PoliciesFolderNode implements k8s.ClusterExplorerV1.Node, PolicyBrowser.Po
 
 class PolicyNode implements k8s.ClusterExplorerV1.Node, PolicyBrowser.PolicyNode {
     constructor(readonly configmap: ConfigMap, private readonly extensionContext: vscode.ExtensionContext) { }
+    readonly [OPA_TREE_NODE_KEY] = true;
     readonly nodeType = 'policy';
     async getChildren(): Promise<k8s.ClusterExplorerV1.Node[]> {
         return [];
@@ -84,6 +101,10 @@ class PolicyNode implements k8s.ClusterExplorerV1.Node, PolicyBrowser.PolicyNode
         treeItem.iconPath = this.extensionContext.asAbsolutePath(policyIcon(this.configmap));
         treeItem.contextValue = 'opak8s.policy';
         treeItem.tooltip = this.tooltip();
+        // TODO: this is seductive but with the webview-based design it ends up opening a load of
+        // tabs (including duplicates) - if we are going to have this then we need to move to a
+        // document model, which will allow tabs to be transient, so let's park it for now.
+        // treeItem.command = { command: 'opak8s.showPolicy', title: 'Show Policy', arguments: [this] };  // NOTE: if invoked this way, the command target is NOT wrapped by the k8s tree structure
         return treeItem;
     }
     private tooltip(): string {

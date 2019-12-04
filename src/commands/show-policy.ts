@@ -38,6 +38,7 @@ function renderMarkdown(policy: ConfigMap): string {
     return definedOf(renderErrorMarkdown(policy), renderRegoMarkdown(policy)).join('\n\n---\n\n');
 }
 
+// TODO: I wonder if we should organise it by file rather than having all the errors at the top?
 function renderErrorMarkdown(policy: ConfigMap): string | undefined {
     const error = policyError(policy);
     if (!error) {
