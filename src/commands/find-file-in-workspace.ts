@@ -39,12 +39,12 @@ async function tryFindSourceFile(policy: ConfigMap): Promise<Errorable<vscode.Ur
     if (policyRegoKeys.length === 0) {
         return { succeeded: false, error: ["Policy configmap doesn't list any .rego files"] };
     }
-    if (policyRegoKeys.length > 1) {
-        // TODO: consider prompting for which one to open
-        return { succeeded: false, error: ["Policy configmap lists more than one .rego file"] };
-    }
 
-    const sourceFileName = policyRegoKeys[0];
+    const sourceFileName = await selectQuickPickOf(policyRegoKeys, (s) => s, { placeHolder: 'Policy contains multiple files - choose one to find' });
+
+    if (!sourceFileName) {
+        return { succeeded: true, result: undefined };  // cancelled
+    }
     const matches = await vscode.workspace.findFiles(`**/${sourceFileName}`);
 
     if (matches.length === 0) {
