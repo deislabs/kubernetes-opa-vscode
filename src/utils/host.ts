@@ -22,6 +22,15 @@ export async function selectQuickPick<T extends vscode.QuickPickItem>(items: T[]
     return await vscode.window.showQuickPick(items, options);
 }
 
+export async function selectQuickPickOf<T>(items: T[], label: (item: T) => string, options?: vscode.QuickPickOptions): Promise<T | undefined> {
+    const picks = items.map((item) => ({ label: label(item), value: item }));
+    const pick = await selectQuickPick(picks, options);
+    if (pick) {
+        return pick.value;
+    }
+    return undefined;
+}
+
 export async function longRunning<T>(title: string, action: () => Promise<T>): Promise<T> {
     const options = {
         location: vscode.ProgressLocation.Notification,
