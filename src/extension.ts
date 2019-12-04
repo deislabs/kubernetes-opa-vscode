@@ -6,12 +6,14 @@ import { unavailableMessage } from './utils/host';
 import { PolicyBrowser } from './ui/policy-browser';
 import { showPolicy } from './commands/show-policy';
 import { deletePolicy } from './commands/delete-policy';
+import { findFileInWorkspace } from './commands/find-file-in-workspace';
 
 export async function activate(context: vscode.ExtensionContext) {
     const disposables = [
         vscode.commands.registerCommand('opak8s.install', install),
         vscode.commands.registerTextEditorCommand('opak8s.deployRego', deployRego),
         vscode.commands.registerCommand('opak8s.showPolicy', showPolicy),
+        vscode.commands.registerCommand('opak8s.findFileInWorkspace', findFileInWorkspace),
         vscode.commands.registerCommand('opak8s.deletePolicy', deletePolicy),
     ];
 
