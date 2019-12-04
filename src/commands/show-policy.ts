@@ -19,5 +19,18 @@ export async function showPolicy(target: any) {
 }
 
 async function tryShowPolicy(policy: ConfigMap): Promise<void> {
-    await vscode.window.showInformationMessage(`imagine all the useful info about ${policy.metadata.name}`);
+    const markdown = renderMarkdown(policy);
+    const html = await vscode.commands.executeCommand<string>('markdown.api.render', markdown);
+    if (!html) {
+        await vscode.window.showErrorMessage("Can't show policy: internal error");
+        return;
+    }
+
+    const webview = vscode.window.createWebviewPanel('opak8s-policy-view', policy.metadata.name, vscode.ViewColumn.Active, { enableFindWidget: true });
+    webview.webview.html = html;
+    webview.reveal();
+}
+
+function renderMarkdown(policy: ConfigMap): string {
+    return `# Meet my policy ${policy.metadata.name}`;
 }

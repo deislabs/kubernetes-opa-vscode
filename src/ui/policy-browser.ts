@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import * as k8s from 'vscode-kubernetes-tools-api';
-import { isSystemConfigMap, OPA_NAMESPACE, GetConfigMapsResponse, ConfigMap, policyStatus, PolicyStatus, policyIsDevRego } from '../opa';
+import { isSystemConfigMap, OPA_NAMESPACE, GetConfigMapsResponse, ConfigMap, policyStatus, PolicyStatus, policyIsDevRego, policyError } from '../opa';
 import { definedOf } from '../utils/array';
 
 export namespace PolicyBrowser {
@@ -91,7 +91,7 @@ class PolicyNode implements k8s.ClusterExplorerV1.Node, PolicyBrowser.PolicyNode
     }
     private statusTooltipPart(): string {
         switch (policyStatus(this.configmap)) {
-            case PolicyStatus.Error: return 'Policy has errors';
+            case PolicyStatus.Error: return `Error: ${policyError(this.configmap)!.message}`;
             case PolicyStatus.Valid: return 'Valid';
             case PolicyStatus.Unevaluated: return 'Not evaluated by OPA';
         }
