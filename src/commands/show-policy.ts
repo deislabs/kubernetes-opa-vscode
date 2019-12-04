@@ -21,12 +21,13 @@ export async function showPolicy(target: any) {
 
 async function tryShowPolicy(policy: ConfigMap): Promise<void> {
     const markdown = renderMarkdown(policy);
-    console.log(markdown);
-    const html = await vscode.commands.executeCommand<string>('markdown.api.render', markdown);
-    if (!html) {
+    const mdhtml = await vscode.commands.executeCommand<string>('markdown.api.render', markdown);
+    if (!mdhtml) {
         await vscode.window.showErrorMessage("Can't show policy: internal error");
         return;
     }
+
+    const html = `<html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none';"><head><body>${mdhtml}</body></html>`;
 
     const webview = vscode.window.createWebviewPanel('opak8s-policy-view', policy.metadata.name, vscode.ViewColumn.Active, { enableFindWidget: true });
     webview.webview.html = html;
