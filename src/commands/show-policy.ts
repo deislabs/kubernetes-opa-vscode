@@ -2,7 +2,8 @@ import * as vscode from 'vscode';
 import * as k8s from 'vscode-kubernetes-tools-api';
 import { unavailableMessage } from '../utils/host';
 import { PolicyBrowser } from '../ui/policy-browser';
-import { ConfigMap } from '../opa';
+import { ConfigMap, policyError, PolicyError } from '../opa';
+import { definedOf } from '../utils/array';
 
 export async function showPolicy(target: any) {
     const clusterExplorer = await k8s.extension.clusterExplorer.v1;
@@ -20,6 +21,7 @@ export async function showPolicy(target: any) {
 
 async function tryShowPolicy(policy: ConfigMap): Promise<void> {
     const markdown = renderMarkdown(policy);
+    console.log(markdown);
     const html = await vscode.commands.executeCommand<string>('markdown.api.render', markdown);
     if (!html) {
         await vscode.window.showErrorMessage("Can't show policy: internal error");
@@ -32,5 +34,45 @@ async function tryShowPolicy(policy: ConfigMap): Promise<void> {
 }
 
 function renderMarkdown(policy: ConfigMap): string {
-    return `# Meet my policy ${policy.metadata.name}`;
+    return definedOf(renderErrorMarkdown(policy), renderRegoMarkdown(policy)).join('\n\n---\n\n');
+}
+
+function renderErrorMarkdown(policy: ConfigMap): string | undefined {
+    const error = policyError(policy);
+    if (!error) {
+        return undefined;
+    }
+
+    return `
+## Error: ${error.message}
+
+Error code: '${error.code}'
+
+${renderErrorDetails(error)}`;
+}
+
+function renderErrorDetails(error: PolicyError): string {
+    if (!error.errors) {
+        return '';
+    }
+    const errorInfos = error.errors.map((e) => `* ${e.message} (${e.location.file}: ${e.location.row}, ${e.location.col})`);
+    return `Error details:\n${errorInfos.join('\n')}`;
+}
+
+function renderRegoMarkdown(policy: ConfigMap): string | undefined {
+    const data = policy.data;
+    const files = Object.keys(data);
+    if (files.length === 0) {
+        return undefined;
+    }
+    if (files.length === 1) {
+        return codeBlock(data[files[0]]);
+    }
+    return files.map((f) => `### ${f}\n\n` + codeBlock(data[f])).join('\n\n---\n\n');
+}
+
+function codeBlock(text: string): string {
+    const lines = text.split('\n');
+    const blockedLines = lines.map((l) => `    ${l}`);
+    return blockedLines.join('\n');
 }
