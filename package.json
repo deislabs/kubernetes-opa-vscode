@@ -24,6 +24,7 @@
     "activationEvents": [
         "onCommand:opak8s.install",
         "onCommand:opak8s.deployRego",
+        "onCommand:opak8s.showPolicy",
         "onCommand:opak8s.deletePolicy",
         "onView:extension.vsKubernetesExplorer"
     ],
@@ -39,6 +40,10 @@
                 "title": "Deploy Policy to Kubernetes"
             },
             {
+                "command": "opak8s.showPolicy",
+                "title": "Show"
+            },
+            {
                 "command": "opak8s.deletePolicy",
                 "title": "Delete"
             }
@@ -49,6 +54,11 @@
                     "command": "opak8s.install",
                     "group": "80",
                     "when": "viewItem =~ /vsKubernetes\\.\\w*cluster($|[^.])/i"
+                },
+                {
+                    "command": "opak8s.showPolicy",
+                    "group": "70",
+                    "when": "viewItem =~ /opak8s\\.policy/i"
                 },
                 {
                     "command": "opak8s.deletePolicy",
@@ -67,6 +77,10 @@
                 {
                     "command": "opak8s.deployRego",
                     "when": "editorLangId == rego"
+                },
+                {
+                    "command": "opak8s.showPolicy",
+                    "when": "never"
                 },
                 {
                     "command": "opak8s.deletePolicy",

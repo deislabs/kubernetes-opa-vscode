@@ -36,6 +36,25 @@ export function policyIsDevRego(configmap: ConfigMap): boolean {
     return !!annotations[OPA_DEV_REGO_ANNOTATION];
 }
 
+export function policyError(configmap: ConfigMap): PolicyError | undefined {
+    const annotations = configmap.metadata.annotations;
+    if (!annotations) {
+        return undefined;
+    }
+
+    const statusText = annotations[OPA_POLICY_STATUS_ANNOTATION];
+    if (!statusText) {
+        return undefined;
+    }
+
+    const status = JSON.parse(statusText);
+    if (status.status !== 'error') {
+        return undefined;
+    }
+
+    return status.error;
+}
+
 export enum PolicyStatus {
     Unevaluated,
     Valid,
@@ -51,5 +70,21 @@ export interface ConfigMap {
     readonly metadata: {
         readonly name: string;
         readonly annotations?: { [key: string]: string }
+    };
+}
+
+export interface PolicyError {
+    readonly code: string;
+    readonly message: string;
+    readonly errors?: ReadonlyArray<PolicyErrorDetail>;
+}
+
+export interface PolicyErrorDetail {
+    readonly code: string;
+    readonly message: string;
+    readonly location: {
+        readonly file: string;
+        readonly row: number;
+        readonly col: number;
     };
 }
