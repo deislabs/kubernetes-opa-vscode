@@ -32,7 +32,20 @@ async function trySyncFromWorkspace(kubectl: k8s.KubectlV1): Promise<void> {
     }
 
     const actions = plan.result;
-    const message = `SHIP IT: ${actions.deploy} | EXPECT YES: ${actions.overwriteDevRego} | MAYBE NOT: ${actions.overwriteNonDevRego} | DELETE IT: ${actions.delete}`;
+
+    const deployQuickPicks = actions.deploy.map((f) => ({label: `${f}: deploy to cluster`, picked: true, value: f, action: 'deploy'}));
+    const overwriteDevRegoQuickPicks = actions.overwriteDevRego.map((f) => ({label: `${f}: deploy to cluster (overwriting existing)`, picked: true, value: f, action: 'deploy'}));
+    const overwriteNonDevRegoQuickPicks = actions.overwriteNonDevRego.map((f) => ({label: `${f}: deploy to cluster (overwriting existing not deployed by VS Code)`, picked: false, value: f, action: 'deploy'}));
+    const deleteQuickPicks = actions.delete.map((p) => ({label: `${p}: delete from cluster`, picked: true, value: p, action: 'delete'}));
+
+    const actionQuickPicks = deployQuickPicks.concat(overwriteDevRegoQuickPicks).concat(overwriteNonDevRegoQuickPicks).concat(deleteQuickPicks);
+    const selectedActionQuickPicks = await vscode.window.showQuickPick(actionQuickPicks, { canPickMany: true });
+
+    if (!selectedActionQuickPicks || selectedActionQuickPicks.length === 0) {
+        return;
+    }
+
+    const message = `SHIP IT: ${selectedActionQuickPicks.filter((p) => p.action === 'deploy').map((p) => p.value)} | DELETE IT: ${selectedActionQuickPicks.filter((p) => p.action === 'delete').map((p) => p.value)}`;
 
     await vscode.window.showInformationMessage(message);
 }
