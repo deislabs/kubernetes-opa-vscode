@@ -85,7 +85,9 @@ class PoliciesFolderNode implements k8s.ClusterExplorerV1.Node, PolicyBrowser.Po
         return [];
     }
     getTreeItem(): vscode.TreeItem {
-        return new vscode.TreeItem('OPA Policies', vscode.TreeItemCollapsibleState.Collapsed);
+        const treeItem = new vscode.TreeItem('OPA Policies', vscode.TreeItemCollapsibleState.Collapsed);
+        treeItem.contextValue = 'opak8s.folder.policies';
+        return treeItem;
     }
 }
 
