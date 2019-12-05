@@ -25,6 +25,7 @@
         "onCommand:opak8s.install",
         "onCommand:opak8s.deployRego",
         "onCommand:opak8s.showPolicy",
+        "onCommand:opak8s.findFileInWorkspace",
         "onCommand:opak8s.deletePolicy",
         "onView:extension.vsKubernetesExplorer"
     ],
@@ -44,6 +45,10 @@
                 "title": "Show"
             },
             {
+                "command": "opak8s.findFileInWorkspace",
+                "title": "Find File in Workspace"
+            },
+            {
                 "command": "opak8s.deletePolicy",
                 "title": "Delete"
             }
@@ -57,7 +62,12 @@
                 },
                 {
                     "command": "opak8s.showPolicy",
-                    "group": "70",
+                    "group": "70@1",
+                    "when": "viewItem =~ /opak8s\\.policy/i"
+                },
+                {
+                    "command": "opak8s.findFileInWorkspace",
+                    "group": "70@2",
                     "when": "viewItem =~ /opak8s\\.policy/i"
                 },
                 {
@@ -80,6 +90,10 @@
                 },
                 {
                     "command": "opak8s.showPolicy",
+                    "when": "never"
+                },
+                {
+                    "command": "opak8s.findFileInWorkspace",
                     "when": "never"
                 },
                 {
