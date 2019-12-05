@@ -21,7 +21,7 @@ async function trySyncFromWorkspace(kubectl: k8s.KubectlV1): Promise<void> {
     // * Find all the .rego files in the workspace
     // * Look at all the configmaps in the cluster (except system ones)
     // * Deploy all the .rego files EXCEPT those that would overwrite a NON-MANAGED configmap
-    //   * OPTIMISATION: Skip .rego files where the data already matches the .rego file content
+    //   * TODO: OPTIMISATION: Skip .rego files where the data already matches the .rego file content
     // * Delete all the MANAGED configmaps that do NOT correspond to any .rego file
     // TO CONSIDER: List what we are going to do first...
 
@@ -32,14 +32,14 @@ async function trySyncFromWorkspace(kubectl: k8s.KubectlV1): Promise<void> {
     }
 
     const actions = plan.result;
-    const message = `SHIP IT: ${actions.deploy} | WARN IT: ${actions.overwriteNonDevRego} | DELETE IT: ${actions.delete}`;
+    const message = `SHIP IT: ${actions.deploy} | EXPECT YES: ${actions.overwriteDevRego} | MAYBE NOT: ${actions.overwriteNonDevRego} | DELETE IT: ${actions.delete}`;
 
     await vscode.window.showInformationMessage(message);
 }
 
 interface SyncActions {
     readonly deploy: ReadonlyArray<string>;
-    readonly overwriteDevRego: ReadonlyArray<string>;  // TODO: we do not yet populate this!
+    readonly overwriteDevRego: ReadonlyArray<string>;
     readonly overwriteNonDevRego: ReadonlyArray<string>;
     readonly delete: ReadonlyArray<string>;
 }
@@ -60,9 +60,10 @@ async function syncActions(kubectl: k8s.KubectlV1): Promise<Errorable<SyncAction
 
     const localRegoFiles = regoUris.map((u) => vscode.workspace.asRelativePath(u));
 
-    const m = partition(localRegoFiles, (f) => wouldOverwriteUnmanagedPolicy(clusterPolicies.result, f));
-    const filesToConfirm = m.get(true) || [];
-    const filesToDeploy = m.get(false) || [];
+    const fileActions = partition(localRegoFiles, (f) => deploymentAction(clusterPolicies.result, f));
+    const filesToDeploy = fileActions.get('no-overwrite') || [];
+    const filesOverwritingDevRego = fileActions.get('overwrite-dev') || [];
+    const filesOverwritingNonDevRego = fileActions.get('overwrite-nondev') || [];
     const policiesToDelete = clusterPolicies.result
                                             .filter((p) => policyIsDevRego(p) && !hasMatchingRegoFile(localRegoFiles, p))
                                             .map((p) => p.metadata.name);
@@ -71,20 +72,20 @@ async function syncActions(kubectl: k8s.KubectlV1): Promise<Errorable<SyncAction
         succeeded: true,
         result: {
             deploy: filesToDeploy,
-            overwriteDevRego: [],
-            overwriteNonDevRego: filesToConfirm,
+            overwriteDevRego: filesOverwritingDevRego,
+            overwriteNonDevRego: filesOverwritingNonDevRego,
             delete: policiesToDelete
         }
     };
 }
 
-function wouldOverwriteUnmanagedPolicy(policies: ReadonlyArray<ConfigMap>, regoFilePath: string): boolean {
+function deploymentAction(policies: ReadonlyArray<ConfigMap>, regoFilePath: string): 'no-overwrite' | 'overwrite-dev' | 'overwrite-nondev' {
     const policyName = basename(regoFilePath, '.rego');
     const matchingPolicy = policies.find((p) => p.metadata.name === policyName);
     if (!matchingPolicy) {
-        return false;
+        return 'no-overwrite';
     }
-    return !policyIsDevRego(matchingPolicy);
+    return policyIsDevRego(matchingPolicy) ? 'overwrite-dev' : 'overwrite-nondev';
 }
 
 function hasMatchingRegoFile(regoFiles: ReadonlyArray<string>, policy: ConfigMap): boolean {
