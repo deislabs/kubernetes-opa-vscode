@@ -55,7 +55,7 @@
             },
             {
                 "command": "opak8s.syncFromWorkspace",
-                "title": "Sync Policies from Workspace"
+                "title": "Sync Policies from Workspace (💻 → ☁️)"
             }
         ],
         "menus": {
