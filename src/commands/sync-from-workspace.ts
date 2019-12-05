@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as k8s from 'vscode-kubernetes-tools-api';
 import { showUnavailable, longRunning } from '../utils/host';
-import { listPolicies, ConfigMap, policyIsDevRego } from '../opa';
+import { listPolicies, ConfigMap, policyIsDevRego, OPA_NAMESPACE } from '../opa';
 import { failed, Errorable, Failed, succeeded } from '../utils/errorable';
 import { partition } from '../utils/array';
 import { basename } from 'path';
@@ -40,9 +40,9 @@ async function trySyncFromWorkspace(clusterExplorer: k8s.ClusterExplorerV1, kube
     const actions = plan.result;
 
     // TODO: type assertions are ugly
-    const deployQuickPicks: ActionQuickPickItem[] = actions.deploy.map((f) => ({label: `${f}: deploy to cluster`, picked: true, value: f, action: 'deploy'}));
-    const overwriteDevRegoQuickPicks: ActionQuickPickItem[] = actions.overwriteDevRego.map((f) => ({label: `${f}: deploy to cluster (overwriting existing)`, picked: true, value: f, action: 'deploy'}));
-    const overwriteNonDevRegoQuickPicks: ActionQuickPickItem[] = actions.overwriteNonDevRego.map((f) => ({label: `${f}: deploy to cluster (overwriting existing not deployed by VS Code)`, picked: false, value: f, action: 'deploy'}));
+    const deployQuickPicks = actions.deploy.map((f) => deployQuickPick(f, 'deploy to cluster', true));
+    const overwriteDevRegoQuickPicks = actions.overwriteDevRego.map((f) => deployQuickPick(f, 'deploy to cluster (overwriting existing)', true));
+    const overwriteNonDevRegoQuickPicks = actions.overwriteNonDevRego.map((f) => deployQuickPick(f, 'deploy to cluster (overwriting existing not deployed by VS Code)', false));
     const deleteQuickPicks: ActionQuickPickItem[] = actions.delete.map((p) => ({label: `${p}: delete from cluster`, picked: true, value: p, action: 'delete'}));
 
     const actionQuickPicks = deployQuickPicks.concat(overwriteDevRegoQuickPicks).concat(overwriteNonDevRegoQuickPicks).concat(deleteQuickPicks);
@@ -52,7 +52,7 @@ async function trySyncFromWorkspace(clusterExplorer: k8s.ClusterExplorerV1, kube
         return;
     }
 
-const selectedActionPromises = selectedActionQuickPicks.map((a) => runAction(kubectl, a));
+    const selectedActionPromises = selectedActionQuickPicks.map((a) => runAction(kubectl, a));
     const actionResults = await longRunning('Syncing the cluster from the workspace...', () =>
         Promise.all(selectedActionPromises)
     );
@@ -70,6 +70,11 @@ const selectedActionPromises = selectedActionQuickPicks.map((a) => runAction(kub
     }
 
     await vscode.window.showInformationMessage(`Synced the cluster from the workspace`);
+}
+
+function deployQuickPick(file: vscode.Uri, actionDescription: string, picked: boolean): ActionQuickPickItem {
+    const displayFileName = vscode.workspace.asRelativePath(file);
+    return {label: `${displayFileName}: ${actionDescription}`, picked: picked, value: file, action: 'deploy'};
 }
 
 function runAction(kubectl: k8s.KubectlV1, action: ActionQuickPickItem): Promise<Errorable<null>> {
@@ -146,9 +151,21 @@ async function runDeployAction(kubectl: k8s.KubectlV1, regoFileUri: vscode.Uri):
     const regoFilePath = regoFileUri.fsPath;
     const regoFileContent = (await vscode.workspace.openTextDocument(regoFileUri)).getText();
     const deploymentInfo = new DeploymentInfo(regoFilePath, regoFileContent);
-    return await createOrUpdateConfigMapFrom(deploymentInfo, kubectl);
+    const deployResult = await createOrUpdateConfigMapFrom(deploymentInfo, kubectl);
+    if (failed(deployResult)) {
+        return { succeeded: false, error: [`deploying ${vscode.workspace.asRelativePath(regoFileUri)} (${deployResult.error[0]})`] };
+    }
+    return deployResult;
 }
 
 async function runDeleteAction(kubectl: k8s.KubectlV1, policyName: string): Promise<Errorable<null>> {
-    return { succeeded: false, error: [`Didn't even try very hard to delete ${policyName}`] };
+    const sr = await kubectl.invokeCommand(`delete configmap ${policyName} --namespace=${OPA_NAMESPACE}`);
+
+    if (sr && sr.code === 0) {
+        return { succeeded: true, result: null };
+    } else {
+        const reason = sr ? sr.stderr : 'unable to run kubectl';
+        return { succeeded: false, error: [`deleting config map ${policyName} (${reason})`] };
+    }
+
 }
