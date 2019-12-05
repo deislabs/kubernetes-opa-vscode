@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as k8s from 'vscode-kubernetes-tools-api';
 import { showUnavailable, longRunning } from '../utils/host';
 import { listPolicies, ConfigMap, policyIsDevRego } from '../opa';
-import { failed, Errorable } from '../utils/errorable';
+import { failed, Errorable, Failed, succeeded } from '../utils/errorable';
 import { partition } from '../utils/array';
 import { basename } from 'path';
 
@@ -33,10 +33,11 @@ async function trySyncFromWorkspace(kubectl: k8s.KubectlV1): Promise<void> {
 
     const actions = plan.result;
 
-    const deployQuickPicks = actions.deploy.map((f) => ({label: `${f}: deploy to cluster`, picked: true, value: f, action: 'deploy'}));
-    const overwriteDevRegoQuickPicks = actions.overwriteDevRego.map((f) => ({label: `${f}: deploy to cluster (overwriting existing)`, picked: true, value: f, action: 'deploy'}));
-    const overwriteNonDevRegoQuickPicks = actions.overwriteNonDevRego.map((f) => ({label: `${f}: deploy to cluster (overwriting existing not deployed by VS Code)`, picked: false, value: f, action: 'deploy'}));
-    const deleteQuickPicks = actions.delete.map((p) => ({label: `${p}: delete from cluster`, picked: true, value: p, action: 'delete'}));
+    // TODO: type assertions are ugly
+    const deployQuickPicks: ActionQuickPickItem[] = actions.deploy.map((f) => ({label: `${f}: deploy to cluster`, picked: true, value: f, action: 'deploy'}));
+    const overwriteDevRegoQuickPicks: ActionQuickPickItem[] = actions.overwriteDevRego.map((f) => ({label: `${f}: deploy to cluster (overwriting existing)`, picked: true, value: f, action: 'deploy'}));
+    const overwriteNonDevRegoQuickPicks: ActionQuickPickItem[] = actions.overwriteNonDevRego.map((f) => ({label: `${f}: deploy to cluster (overwriting existing not deployed by VS Code)`, picked: false, value: f, action: 'deploy'}));
+    const deleteQuickPicks: ActionQuickPickItem[] = actions.delete.map((p) => ({label: `${p}: delete from cluster`, picked: true, value: p, action: 'delete'}));
 
     const actionQuickPicks = deployQuickPicks.concat(overwriteDevRegoQuickPicks).concat(overwriteNonDevRegoQuickPicks).concat(deleteQuickPicks);
     const selectedActionQuickPicks = await vscode.window.showQuickPick(actionQuickPicks, { canPickMany: true });
@@ -45,9 +46,28 @@ async function trySyncFromWorkspace(kubectl: k8s.KubectlV1): Promise<void> {
         return;
     }
 
-    const message = `SHIP IT: ${selectedActionQuickPicks.filter((p) => p.action === 'deploy').map((p) => p.value)} | DELETE IT: ${selectedActionQuickPicks.filter((p) => p.action === 'delete').map((p) => p.value)}`;
+    const selectedActions = selectedActionQuickPicks.map((a) => ({ value: a.value, action: a.action }));
+    const selectedActionPromises = selectedActions.map((a) => runAction(kubectl, a));
+    const actionResults = await longRunning('Syncing the cluster from the workspace...', () =>
+        Promise.all(selectedActionPromises)
+    );
 
-    await vscode.window.showInformationMessage(message);
+    const failures = actionResults.filter((r) => failed(r)) as Failed[];
+    if (failures.length > 0) {
+        const successCount = actionResults.filter((r) => succeeded(r)).length;
+        const successCountInfo = successCount > 0 ? `.  (${successCount} other update(s) succeeded.)` : '';
+        await vscode.window.showErrorMessage(`${failures.length} update(s) failed: ${failures.map((f) => f.error[0]).join(', ')}${successCountInfo}`);
+        return;
+    }
+
+    await vscode.window.showInformationMessage(`Synced the cluster from the workspace`);
+}
+
+function runAction(kubectl: k8s.KubectlV1, action: { value: string, action: 'deploy' | 'delete' }): Promise<Errorable<null>> {
+    switch (action.action) {
+        case 'deploy': return runDeployAction(kubectl, action.value);
+        case 'delete': return runDeleteAction(kubectl, action.value);
+    }
 }
 
 interface SyncActions {
@@ -55,6 +75,11 @@ interface SyncActions {
     readonly overwriteDevRego: ReadonlyArray<string>;
     readonly overwriteNonDevRego: ReadonlyArray<string>;
     readonly delete: ReadonlyArray<string>;
+}
+
+interface ActionQuickPickItem extends vscode.QuickPickItem {
+    readonly value: string;
+    readonly action: 'deploy' | 'delete';
 }
 
 async function syncActions(kubectl: k8s.KubectlV1): Promise<Errorable<SyncActions>> {
@@ -103,4 +128,12 @@ function deploymentAction(policies: ReadonlyArray<ConfigMap>, regoFilePath: stri
 
 function hasMatchingRegoFile(regoFiles: ReadonlyArray<string>, policy: ConfigMap): boolean {
     return regoFiles.some((f) => basename(f, '.rego') === policy.metadata.name);
+}
+
+async function runDeployAction(kubectl: k8s.KubectlV1, regoFilePath: string): Promise<Errorable<null>> {
+    return { succeeded: true, result: null };
+}
+
+async function runDeleteAction(kubectl: k8s.KubectlV1, policyName: string): Promise<Errorable<null>> {
+    return { succeeded: false, error: [`Didn't even try very hard to delete ${policyName}`] };
 }
