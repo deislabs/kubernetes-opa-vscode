@@ -1,9 +1,10 @@
 import * as vscode from 'vscode';
 import * as k8s from 'vscode-kubernetes-tools-api';
-import { showUnavailable } from '../utils/host';
-import { listPolicies, ConfigMap } from '../opa';
-import { failed } from '../utils/errorable';
+import { showUnavailable, longRunning } from '../utils/host';
+import { listPolicies, ConfigMap, policyIsDevRego } from '../opa';
+import { failed, Errorable } from '../utils/errorable';
 import { partition } from '../utils/array';
+import { basename } from 'path';
 
 export async function syncFromWorkspace() {
     const kubectl = await k8s.extension.kubectl.v1;
@@ -24,35 +25,68 @@ async function trySyncFromWorkspace(kubectl: k8s.KubectlV1): Promise<void> {
     // * Delete all the MANAGED configmaps that do NOT correspond to any .rego file
     // TO CONSIDER: List what we are going to do first...
 
+    const plan = await longRunning('Working out sync actions...', () => syncActions(kubectl));
+    if (failed(plan)) {
+        await vscode.window.showErrorMessage(plan.error[0]);
+        return;
+    }
+
+    const actions = plan.result;
+    const message = `SHIP IT: ${actions.deploy} | WARN IT: ${actions.overwriteNonDevRego} | DELETE IT: ${actions.delete}`;
+
+    await vscode.window.showInformationMessage(message);
+}
+
+interface SyncActions {
+    readonly deploy: ReadonlyArray<string>;
+    readonly overwriteDevRego: ReadonlyArray<string>;  // TODO: we do not yet populate this!
+    readonly overwriteNonDevRego: ReadonlyArray<string>;
+    readonly delete: ReadonlyArray<string>;
+}
+
+async function syncActions(kubectl: k8s.KubectlV1): Promise<Errorable<SyncActions>> {
     const regoUris = await vscode.workspace.findFiles('**/*.rego');
     const clusterPolicies = await listPolicies(kubectl);
 
     const nonFileRegoUris = regoUris.filter((u) => u.scheme !== 'file');
     if (nonFileRegoUris.length > 0) {
         const message = nonFileRegoUris.map((u) => u.toString()).join(', ');
-        await vscode.window.showErrorMessage(`Workspace contains .rego documents that aren't files. Save all .rego documents to the file system and try again. (${message})`);
-        return;
+        return { succeeded: false, error: [`Workspace contains .rego documents that aren't files. Save all .rego documents to the file system and try again. (${message})`] };
     }
 
     if (failed(clusterPolicies)) {
-        await vscode.window.showErrorMessage(`Failed to get current policies: ${clusterPolicies.error[0]}`);
-        return;
+        return { succeeded: false, error: [`Failed to get current policies: ${clusterPolicies.error[0]}`] };
     }
 
     const localRegoFiles = regoUris.map((u) => vscode.workspace.asRelativePath(u));
 
-    const { matches: filesToDeploy, nonMatches: filesToConfirm } = partition(localRegoFiles, (f) => matchesUnmanagedPolicy(clusterPolicies.result, f));
-    const policiesToDelete = clusterPolicies.result.filter((p) => !hasMatchingRegoFile(localRegoFiles, p));
+    const m = partition(localRegoFiles, (f) => wouldOverwriteUnmanagedPolicy(clusterPolicies.result, f));
+    const filesToConfirm = m.get(true) || [];
+    const filesToDeploy = m.get(false) || [];
+    const policiesToDelete = clusterPolicies.result
+                                            .filter((p) => policyIsDevRego(p) && !hasMatchingRegoFile(localRegoFiles, p))
+                                            .map((p) => p.metadata.name);
 
-    const message = `SHIP IT: ${filesToDeploy} | WARN IT: ${filesToConfirm} | DELETE IT: ${policiesToDelete}`;
-
-    await vscode.window.showInformationMessage(message);
+    return {
+        succeeded: true,
+        result: {
+            deploy: filesToDeploy,
+            overwriteDevRego: [],
+            overwriteNonDevRego: filesToConfirm,
+            delete: policiesToDelete
+        }
+    };
 }
 
-function matchesUnmanagedPolicy(policies: ReadonlyArray<ConfigMap>, regoFilePath: string): boolean {
-    return true;
+function wouldOverwriteUnmanagedPolicy(policies: ReadonlyArray<ConfigMap>, regoFilePath: string): boolean {
+    const policyName = basename(regoFilePath, '.rego');
+    const matchingPolicy = policies.find((p) => p.metadata.name === policyName);
+    if (!matchingPolicy) {
+        return false;
+    }
+    return !policyIsDevRego(matchingPolicy);
 }
 
 function hasMatchingRegoFile(regoFiles: ReadonlyArray<string>, policy: ConfigMap): boolean {
-    return true;
+    return regoFiles.some((f) => basename(f, '.rego') === policy.metadata.name);
 }
