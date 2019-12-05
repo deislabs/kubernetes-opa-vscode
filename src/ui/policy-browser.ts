@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
 import * as k8s from 'vscode-kubernetes-tools-api';
-import { isSystemConfigMap, OPA_NAMESPACE, GetConfigMapsResponse, ConfigMap, policyStatus, PolicyStatus, policyIsDevRego, policyError } from '../opa';
+import { ConfigMap, policyStatus, PolicyStatus, policyIsDevRego, policyError, listPolicies } from '../opa';
 import { definedOf } from '../utils/array';
+import { failed } from '../utils/errorable';
 
 const OPA_TREE_NODE_KEY = 'opak8s_tree_node_8357fa36-5ade-4b9b-b0f4-ac07d6460c5c';
 
@@ -70,19 +71,12 @@ class PoliciesFolderNode implements k8s.ClusterExplorerV1.Node, PolicyBrowser.Po
     readonly [OPA_TREE_NODE_KEY] = true;
     readonly nodeType = 'folder.policies';
     async getChildren(): Promise<k8s.ClusterExplorerV1.Node[]> {
-        const sr = await this.kubectl.invokeCommand(`get configmap --namespace ${OPA_NAMESPACE} -o json`);
-        if (!sr || sr.code !== 0) {
-            return [new ErrorNode(sr)];
+        const policies = await listPolicies(this.kubectl);
+        if (failed(policies)) {
+            return [new ErrorNode(policies.error[0])];
         }
 
-        const configmaps: GetConfigMapsResponse = JSON.parse(sr.stdout);
-        if (configmaps.items) {
-            return configmaps.items
-                             .filter((cm) => !isSystemConfigMap(cm))
-                             .map((cm) => new PolicyNode(cm, this.extensionContext));
-        }
-
-        return [];
+        return policies.result.map((cm) => new PolicyNode(cm, this.extensionContext));
     }
     getTreeItem(): vscode.TreeItem {
         const treeItem = new vscode.TreeItem('OPA Policies', vscode.TreeItemCollapsibleState.Collapsed);
@@ -128,20 +122,14 @@ class PolicyNode implements k8s.ClusterExplorerV1.Node, PolicyBrowser.PolicyNode
 }
 
 class ErrorNode implements k8s.ClusterExplorerV1.Node {
-    constructor(private readonly sr: k8s.KubectlV1.ShellResult | undefined) { }
+    constructor(private readonly message: string) { }
     async getChildren(): Promise<k8s.ClusterExplorerV1.Node[]> {
         return [];
     }
     getTreeItem(): vscode.TreeItem {
         const treeItem = new vscode.TreeItem('Error');
-        treeItem.tooltip = this.tooltip();
+        treeItem.tooltip = this.message;
         return treeItem;
-    }
-    private tooltip(): string {
-        if (!this.sr) {
-            return 'Unable to run kubectl';
-        }
-        return this.sr.stderr;
     }
 }
 
