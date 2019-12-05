@@ -123,6 +123,7 @@
         "vscode": "^1.1.6"
     },
     "extensionDependencies": [
-        "ms-kubernetes-tools.vscode-kubernetes-tools"
+        "ms-kubernetes-tools.vscode-kubernetes-tools",
+        "tsandall.opa"
     ]
 }
