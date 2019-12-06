@@ -5,7 +5,7 @@ import { listPolicies, ConfigMap, policyIsDevRego, OPA_NAMESPACE } from '../opa'
 import { failed, Errorable, Failed, succeeded } from '../utils/errorable';
 import { partition } from '../utils/array';
 import { basename } from 'path';
-import { DeploymentInfo, createOrUpdateConfigMapFrom } from '../opa/deployment';
+import { DeploymentInfo, createOrUpdateConfigMapFrom, updateConfigMapFrom } from '../opa/deployment';
 
 export async function syncFromWorkspace() {
     const clusterExplorer = await k8s.extension.clusterExplorer.v1;
@@ -72,6 +72,7 @@ interface SyncActions {
 type ActionQuickPickItem = vscode.QuickPickItem & ({
     readonly value: RegoFile;
     readonly action: 'deploy';
+    readonly isCreate: boolean;
 } | {
     readonly value: string;
     readonly action: 'delete';
@@ -146,31 +147,33 @@ function hasMatchingRegoFile(regoFiles: ReadonlyArray<string>, policy: ConfigMap
 }
 
 function createQuickPicks(actions: SyncActions) {
-    const deployQuickPicks = actions.deploy.map((f) => deployQuickPick(f, 'deploy to cluster', true));
-    const overwriteDevRegoQuickPicks = actions.overwriteDevRego.map((f) => deployQuickPick(f, 'deploy to cluster (overwriting existing)', true));
-    const overwriteNonDevRegoQuickPicks = actions.overwriteNonDevRego.map((f) => deployQuickPick(f, 'deploy to cluster (overwriting existing not deployed by VS Code)', false));
+    const deployQuickPicks = actions.deploy.map((f) => deployQuickPick(f, 'deploy to cluster', true, true));
+    const overwriteDevRegoQuickPicks = actions.overwriteDevRego.map((f) => deployQuickPick(f, 'deploy to cluster (overwriting existing)', true, false));
+    const overwriteNonDevRegoQuickPicks = actions.overwriteNonDevRego.map((f) => deployQuickPick(f, 'deploy to cluster (overwriting existing not deployed by VS Code)', false, false));
     const deleteQuickPicks: ActionQuickPickItem[] = actions.delete.map((p) => ({ label: `${p}: delete from cluster`, picked: true, value: p, action: 'delete' }));
     const actionQuickPicks = deployQuickPicks.concat(overwriteDevRegoQuickPicks).concat(overwriteNonDevRegoQuickPicks).concat(deleteQuickPicks);
     return actionQuickPicks;
 }
 
-function deployQuickPick(file: RegoFile, actionDescription: string, picked: boolean): ActionQuickPickItem {
+function deployQuickPick(file: RegoFile, actionDescription: string, picked: boolean, isCreate: boolean): ActionQuickPickItem {
     const displayFileName = vscode.workspace.asRelativePath(file.uri);
-    return {label: `${displayFileName}: ${actionDescription}`, picked: picked, value: file, action: 'deploy'};
+    return {label: `${displayFileName}: ${actionDescription}`, picked: picked, value: file, action: 'deploy', isCreate: isCreate };
 }
 
 function runAction(kubectl: k8s.KubectlV1, action: ActionQuickPickItem): Promise<Errorable<null>> {
     switch (action.action) {
-        case 'deploy': return runDeployAction(kubectl, action.value);
+        case 'deploy': return runDeployAction(kubectl, action.value, action.isCreate);
         case 'delete': return runDeleteAction(kubectl, action.value);
     }
 }
 
-async function runDeployAction(kubectl: k8s.KubectlV1, regoFile: RegoFile): Promise<Errorable<null>> {
+async function runDeployAction(kubectl: k8s.KubectlV1, regoFile: RegoFile, isCreate: boolean): Promise<Errorable<null>> {
     const regoFilePath = regoFile.uri.fsPath;
     const regoFileContent = regoFile.content;
     const deploymentInfo = new DeploymentInfo(regoFilePath, regoFileContent);
-    const deployResult = await createOrUpdateConfigMapFrom(deploymentInfo, kubectl);  // TODO: we know which policies exist!  Should be able to skip doomed create attempts
+    const deployResult = isCreate ?
+                            await createOrUpdateConfigMapFrom(deploymentInfo, kubectl) :
+                            await updateConfigMapFrom(deploymentInfo, kubectl);
     if (failed(deployResult)) {
         return { succeeded: false, error: [`deploying ${vscode.workspace.asRelativePath(regoFile.uri)} (${deployResult.error[0]})`] };
     }

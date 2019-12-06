@@ -22,7 +22,7 @@ export async function createOrUpdateConfigMapFrom(deploymentInfo: DeploymentInfo
     return { succeeded: false, error: [reason] };
 }
 
-async function updateConfigMapFrom(deploymentInfo: DeploymentInfo, kubectl: k8s.KubectlV1): Promise<Errorable<null>> {
+export async function updateConfigMapFrom(deploymentInfo: DeploymentInfo, kubectl: k8s.KubectlV1): Promise<Errorable<null>> {
     const getResult = await kubectl.invokeCommand(`get configmap ${deploymentInfo.configmapName} --namespace=${OPA_NAMESPACE} -o json`);
     if (!getResult || getResult.code !== 0) {
         const reason = getResult ? getResult.stderr : 'unable to run kubectl';
