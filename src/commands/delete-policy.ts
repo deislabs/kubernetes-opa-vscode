@@ -39,6 +39,6 @@ async function tryDeletePolicy(policy: ConfigMap, clusterExplorer: k8s.ClusterEx
         await vscode.window.showInformationMessage(`Deleted config map ${policy.metadata.name}`);
     } else {
         const reason = deleteResult ? deleteResult.stderr : 'unable to run kubectl';
-        await vscode.window.showErrorMessage(`Error deleteing config map ${policy.metadata.name}: ${reason}`);
+        await vscode.window.showErrorMessage(`Error deleting config map ${policy.metadata.name}: ${reason}`);
     }
 }

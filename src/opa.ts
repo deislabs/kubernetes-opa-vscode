@@ -1,8 +1,28 @@
+import { KubectlV1 } from "vscode-kubernetes-tools-api";
+import { Errorable } from "./utils/errorable";
+
 export const OPA_HELM_RELEASE_NAME = 'opa';
 export const OPA_NAMESPACE = 'opa';
 export const OPA_DEV_REGO_ANNOTATION = 'k8s-opa-vscode.hestia.cc/devrego';
 
 const OPA_POLICY_STATUS_ANNOTATION = 'openpolicyagent.org/policy-status';
+
+export async function listPolicies(kubectl: KubectlV1): Promise<Errorable<ReadonlyArray<ConfigMap>>> {
+    const sr = await kubectl.invokeCommand(`get configmap --namespace ${OPA_NAMESPACE} -o json`);
+    if (!sr || sr.code !== 0) {
+        const message = sr ? sr.stderr : 'Unable to run kubectl';
+        return { succeeded: false, error: [message] };
+    }
+
+    const configmaps: GetConfigMapsResponse = JSON.parse(sr.stdout);
+    if (configmaps.items) {
+        const policies = configmaps.items.filter((cm) => !isSystemConfigMap(cm));
+        return { succeeded: true, result: policies };
+    }
+
+    return { succeeded: true, result: [] };
+
+}
 
 export function isSystemConfigMap(configmap: ConfigMap): boolean {
     return configmap.metadata.name === 'opa-default-system-main';

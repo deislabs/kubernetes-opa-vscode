@@ -7,6 +7,7 @@ import { PolicyBrowser } from './ui/policy-browser';
 import { showPolicy } from './commands/show-policy';
 import { deletePolicy } from './commands/delete-policy';
 import { findFileInWorkspace } from './commands/find-file-in-workspace';
+import { syncFromWorkspace } from './commands/sync-from-workspace';
 
 export async function activate(context: vscode.ExtensionContext) {
     const disposables = [
@@ -15,6 +16,7 @@ export async function activate(context: vscode.ExtensionContext) {
         vscode.commands.registerCommand('opak8s.showPolicy', showPolicy),
         vscode.commands.registerCommand('opak8s.findFileInWorkspace', findFileInWorkspace),
         vscode.commands.registerCommand('opak8s.deletePolicy', deletePolicy),
+        vscode.commands.registerCommand('opak8s.syncFromWorkspace', syncFromWorkspace),
     ];
 
     context.subscriptions.push(...disposables);

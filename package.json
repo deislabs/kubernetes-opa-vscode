@@ -27,6 +27,7 @@
         "onCommand:opak8s.showPolicy",
         "onCommand:opak8s.findFileInWorkspace",
         "onCommand:opak8s.deletePolicy",
+        "onCommand:opak8s.syncFromWorkspace",
         "onView:extension.vsKubernetesExplorer"
     ],
     "main": "./out/extension",
@@ -51,6 +52,10 @@
             {
                 "command": "opak8s.deletePolicy",
                 "title": "Delete"
+            },
+            {
+                "command": "opak8s.syncFromWorkspace",
+                "title": "Sync Policies from Workspace (💻 → ☁️)"
             }
         ],
         "menus": {
@@ -74,6 +79,11 @@
                     "command": "opak8s.deletePolicy",
                     "group": "80",
                     "when": "viewItem =~ /opak8s\\.policy/i"
+                },
+                {
+                    "command": "opak8s.syncFromWorkspace",
+                    "group": "10",
+                    "when": "viewItem =~ /opak8s\\.folder\\.policies/i"
                 }
             ],
             "editor/context": [
