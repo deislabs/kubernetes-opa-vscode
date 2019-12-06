@@ -26,7 +26,7 @@ async function trySyncFromWorkspace(clusterExplorer: k8s.ClusterExplorerV1, kube
     // * Find all the .rego files in the workspace
     // * Look at all the configmaps in the cluster (except system ones)
     // * Deploy all the .rego files EXCEPT those that would overwrite a NON-MANAGED configmap
-    //   * TODO: OPTIMISATION: Skip .rego files where the data already matches the .rego file content
+    //   * OPTIMISATION: Skip .rego files where the data already matches the .rego file content
     // * Delete all the MANAGED configmaps that do NOT correspond to any .rego file
 
     // TODO: We need to make sure all .rego files are saved (per the Deploy command)
@@ -38,6 +38,11 @@ async function trySyncFromWorkspace(clusterExplorer: k8s.ClusterExplorerV1, kube
     }
 
     const actions = plan.result;
+
+    if (empty(actions)) {
+        await vscode.window.showInformationMessage('Cluster and workspace are already in sync');
+        return;
+    }
 
     // TODO: type assertions are ugly
     const deployQuickPicks = actions.deploy.map((f) => deployQuickPick(f, 'deploy to cluster', true));
@@ -72,8 +77,8 @@ async function trySyncFromWorkspace(clusterExplorer: k8s.ClusterExplorerV1, kube
     await vscode.window.showInformationMessage(`Synced the cluster from the workspace`);
 }
 
-function deployQuickPick(file: vscode.Uri, actionDescription: string, picked: boolean): ActionQuickPickItem {
-    const displayFileName = vscode.workspace.asRelativePath(file);
+function deployQuickPick(file: RegoFile, actionDescription: string, picked: boolean): ActionQuickPickItem {
+    const displayFileName = vscode.workspace.asRelativePath(file.uri);
     return {label: `${displayFileName}: ${actionDescription}`, picked: picked, value: file, action: 'deploy'};
 }
 
@@ -84,15 +89,20 @@ function runAction(kubectl: k8s.KubectlV1, action: ActionQuickPickItem): Promise
     }
 }
 
+interface RegoFile {
+    readonly uri: vscode.Uri;
+    readonly content: string;
+}
+
 interface SyncActions {
-    readonly deploy: ReadonlyArray<vscode.Uri>;
-    readonly overwriteDevRego: ReadonlyArray<vscode.Uri>;
-    readonly overwriteNonDevRego: ReadonlyArray<vscode.Uri>;
+    readonly deploy: ReadonlyArray<RegoFile>;
+    readonly overwriteDevRego: ReadonlyArray<RegoFile>;
+    readonly overwriteNonDevRego: ReadonlyArray<RegoFile>;
     readonly delete: ReadonlyArray<string>;
 }
 
 type ActionQuickPickItem = vscode.QuickPickItem & ({
-    readonly value: vscode.Uri;
+    readonly value: RegoFile;
     readonly action: 'deploy';
 } | {
     readonly value: string;
@@ -101,6 +111,7 @@ type ActionQuickPickItem = vscode.QuickPickItem & ({
 
 async function syncActions(kubectl: k8s.KubectlV1): Promise<Errorable<SyncActions>> {
     const regoUris = await vscode.workspace.findFiles('**/*.rego');
+    const regoFiles = await Promise.all(regoUris.map(async (u) => ({ uri: u, content: (await vscode.workspace.openTextDocument(u)).getText() })));
     const clusterPolicies = await listPolicies(kubectl);
 
     const nonFileRegoUris = regoUris.filter((u) => u.scheme !== 'file');
@@ -115,7 +126,7 @@ async function syncActions(kubectl: k8s.KubectlV1): Promise<Errorable<SyncAction
 
     const localRegoFiles = regoUris.map((u) => vscode.workspace.asRelativePath(u));
 
-    const fileActions = partition(regoUris, (f) => deploymentAction(clusterPolicies.result, f));
+    const fileActions = partition(regoFiles, (f) => deploymentAction(clusterPolicies.result, f));
     const filesToDeploy = fileActions.get('no-overwrite') || [];
     const filesOverwritingDevRego = fileActions.get('overwrite-dev') || [];
     const filesOverwritingNonDevRego = fileActions.get('overwrite-nondev') || [];
@@ -134,26 +145,34 @@ async function syncActions(kubectl: k8s.KubectlV1): Promise<Errorable<SyncAction
     };
 }
 
-function deploymentAction(policies: ReadonlyArray<ConfigMap>, regoFileUri: vscode.Uri): 'no-overwrite' | 'overwrite-dev' | 'overwrite-nondev' {
-    const policyName = basename(regoFileUri.fsPath, '.rego');  // TODO: deduplicate - seems like DeploymentInfo might do this for us?
+function deploymentAction(policies: ReadonlyArray<ConfigMap>, regoFile: RegoFile): 'no-overwrite' | 'overwrite-dev' | 'overwrite-nondev' | 'skip' {
+    const policyName = basename(regoFile.uri.fsPath, '.rego');  // TODO: deduplicate - seems like DeploymentInfo might do this for us?
     const matchingPolicy = policies.find((p) => p.metadata.name === policyName);
     if (!matchingPolicy) {
         return 'no-overwrite';
     }
-    return policyIsDevRego(matchingPolicy) ? 'overwrite-dev' : 'overwrite-nondev';
+    if (!policyIsDevRego(matchingPolicy)) {
+        return 'overwrite-nondev';  // it's kind of opaque to us so let's not try to sniff content
+    }
+    const policyKeys = Object.keys(matchingPolicy.data);
+    if (policyKeys.length !== 1) {
+        return 'overwrite-nondev';  // shouldn't happen so something fishy is going on - claims to be managed but has been fiddled with
+    }
+    const policyContent = matchingPolicy.data[policyKeys[0]];
+    return policyContent === regoFile.content ? 'skip' : 'overwrite-dev';
 }
 
 function hasMatchingRegoFile(regoFiles: ReadonlyArray<string>, policy: ConfigMap): boolean {
     return regoFiles.some((f) => basename(f, '.rego') === policy.metadata.name);
 }
 
-async function runDeployAction(kubectl: k8s.KubectlV1, regoFileUri: vscode.Uri): Promise<Errorable<null>> {
-    const regoFilePath = regoFileUri.fsPath;
-    const regoFileContent = (await vscode.workspace.openTextDocument(regoFileUri)).getText();
+async function runDeployAction(kubectl: k8s.KubectlV1, regoFile: RegoFile): Promise<Errorable<null>> {
+    const regoFilePath = regoFile.uri.fsPath;
+    const regoFileContent = regoFile.content;
     const deploymentInfo = new DeploymentInfo(regoFilePath, regoFileContent);
     const deployResult = await createOrUpdateConfigMapFrom(deploymentInfo, kubectl);
     if (failed(deployResult)) {
-        return { succeeded: false, error: [`deploying ${vscode.workspace.asRelativePath(regoFileUri)} (${deployResult.error[0]})`] };
+        return { succeeded: false, error: [`deploying ${vscode.workspace.asRelativePath(regoFile.uri)} (${deployResult.error[0]})`] };
     }
     return deployResult;
 }
@@ -168,4 +187,12 @@ async function runDeleteAction(kubectl: k8s.KubectlV1, policyName: string): Prom
         return { succeeded: false, error: [`deleting config map ${policyName} (${reason})`] };
     }
 
+}
+
+function empty(actions: SyncActions): boolean {
+    // TODO: This feels like a maintenance nightmare
+    return actions.delete.length === 0 &&
+        actions.deploy.length === 0 &&
+        actions.overwriteDevRego.length === 0 &&
+        actions.overwriteNonDevRego.length === 0;
 }
