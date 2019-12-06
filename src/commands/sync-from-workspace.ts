@@ -28,7 +28,11 @@ async function trySyncFromWorkspace(clusterExplorer: k8s.ClusterExplorerV1, kube
     // * If the user confirms any sync actions, go ahead and perform them.
     // * Display the outcome.
 
-    // TODO: We need to make sure all .rego files are saved (per the Deploy command)
+    const allSaved = await saveRegoFiles();
+    if (!allSaved) {
+        await vscode.window.showErrorMessage("Some .rego files have changes which couldn't be saved. Please save all .rego files and try again.");
+        return;
+    }
 
     const plan = await longRunning('Working out sync actions...', () => syncActions(kubectl));
     if (failed(plan)) {
@@ -55,6 +59,16 @@ async function trySyncFromWorkspace(clusterExplorer: k8s.ClusterExplorerV1, kube
     );
 
     await displaySyncResult(actionResults, clusterExplorer);
+}
+
+async function saveRegoFiles(): Promise<boolean> {
+    const dirtyRegoFiles = vscode.workspace.textDocuments.filter((d) => d.languageId === 'rego' && d.isDirty);
+    const savePromises = dirtyRegoFiles.map((f) => f.save());
+    const saveResults = await Promise.all(savePromises);
+    if (saveResults.some((r) => !r)) {
+        return false;
+    }
+    return true;
 }
 
 interface RegoFile {
