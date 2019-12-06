@@ -23,11 +23,10 @@ export async function syncFromWorkspace() {
 
 async function trySyncFromWorkspace(clusterExplorer: k8s.ClusterExplorerV1, kubectl: k8s.KubectlV1): Promise<void> {
     // Strategy:
-    // * Find all the .rego files in the workspace
-    // * Look at all the configmaps in the cluster (except system ones)
-    // * Deploy all the .rego files EXCEPT those that would overwrite a NON-MANAGED configmap
-    //   * OPTIMISATION: Skip .rego files where the data already matches the .rego file content
-    // * Delete all the MANAGED configmaps that do NOT correspond to any .rego file
+    // * Compare the files and the cluster and work out what needs to be done.
+    // * Render the list of actions needed to sync as a multi-select quick picker.
+    // * If the user confirms any sync actions, go ahead and perform them.
+    // * Display the outcome.
 
     // TODO: We need to make sure all .rego files are saved (per the Deploy command)
 
@@ -39,20 +38,13 @@ async function trySyncFromWorkspace(clusterExplorer: k8s.ClusterExplorerV1, kube
 
     const actions = plan.result;
 
-    if (empty(actions)) {
+    const actionQuickPicks = createQuickPicks(actions);
+    if (actionQuickPicks.length === 0) {
         await vscode.window.showInformationMessage('Cluster and workspace are already in sync');
         return;
     }
 
-    // TODO: type assertions are ugly
-    const deployQuickPicks = actions.deploy.map((f) => deployQuickPick(f, 'deploy to cluster', true));
-    const overwriteDevRegoQuickPicks = actions.overwriteDevRego.map((f) => deployQuickPick(f, 'deploy to cluster (overwriting existing)', true));
-    const overwriteNonDevRegoQuickPicks = actions.overwriteNonDevRego.map((f) => deployQuickPick(f, 'deploy to cluster (overwriting existing not deployed by VS Code)', false));
-    const deleteQuickPicks: ActionQuickPickItem[] = actions.delete.map((p) => ({label: `${p}: delete from cluster`, picked: true, value: p, action: 'delete'}));
-
-    const actionQuickPicks = deployQuickPicks.concat(overwriteDevRegoQuickPicks).concat(overwriteNonDevRegoQuickPicks).concat(deleteQuickPicks);
     const selectedActionQuickPicks = await vscode.window.showQuickPick(actionQuickPicks, { canPickMany: true });
-
     if (!selectedActionQuickPicks || selectedActionQuickPicks.length === 0) {
         return;
     }
@@ -62,6 +54,10 @@ async function trySyncFromWorkspace(clusterExplorer: k8s.ClusterExplorerV1, kube
         Promise.all(selectedActionPromises)
     );
 
+    await displaySyncResult(actionResults, clusterExplorer);
+}
+
+async function displaySyncResult(actionResults: Errorable<null>[], clusterExplorer: k8s.ClusterExplorerV1): Promise<void> {
     const failures = actionResults.filter((r) => failed(r)) as Failed[];
     const successCount = actionResults.filter((r) => succeeded(r)).length;
     if (failures.length > 0) {
@@ -75,6 +71,15 @@ async function trySyncFromWorkspace(clusterExplorer: k8s.ClusterExplorerV1, kube
     }
 
     await vscode.window.showInformationMessage(`Synced the cluster from the workspace`);
+}
+
+function createQuickPicks(actions: SyncActions) {
+    const deployQuickPicks = actions.deploy.map((f) => deployQuickPick(f, 'deploy to cluster', true));
+    const overwriteDevRegoQuickPicks = actions.overwriteDevRego.map((f) => deployQuickPick(f, 'deploy to cluster (overwriting existing)', true));
+    const overwriteNonDevRegoQuickPicks = actions.overwriteNonDevRego.map((f) => deployQuickPick(f, 'deploy to cluster (overwriting existing not deployed by VS Code)', false));
+    const deleteQuickPicks: ActionQuickPickItem[] = actions.delete.map((p) => ({ label: `${p}: delete from cluster`, picked: true, value: p, action: 'delete' }));
+    const actionQuickPicks = deployQuickPicks.concat(overwriteDevRegoQuickPicks).concat(overwriteNonDevRegoQuickPicks).concat(deleteQuickPicks);
+    return actionQuickPicks;
 }
 
 function deployQuickPick(file: RegoFile, actionDescription: string, picked: boolean): ActionQuickPickItem {
@@ -110,6 +115,17 @@ type ActionQuickPickItem = vscode.QuickPickItem & ({
 });
 
 async function syncActions(kubectl: k8s.KubectlV1): Promise<Errorable<SyncActions>> {
+    // Strategy:
+    // * Find all the .rego files in the workspace
+    // * Look at all the configmaps in the cluster (except system ones)
+    // * Sort the .rego files into buckets:
+    //   * No matching policy. We can deploy these fearlessly.
+    //   * Matching policy that the extension didn't deploy. We can deploy these with caution.
+    //   * Matching policy whose content is the same as the file. We can skip these.
+    //   * Matching policy whose content is out of sync with the file. We can deploy these fearlessly, too.
+    // * Pick out all the MANAGED configmaps in the cluster which DON'T have matching files.
+    //   We propose to delete these.
+
     const regoUris = await vscode.workspace.findFiles('**/*.rego');
     const regoFiles = await Promise.all(regoUris.map(async (u) => ({ uri: u, content: (await vscode.workspace.openTextDocument(u)).getText() })));
     const clusterPolicies = await listPolicies(kubectl);
@@ -187,12 +203,4 @@ async function runDeleteAction(kubectl: k8s.KubectlV1, policyName: string): Prom
         return { succeeded: false, error: [`deleting config map ${policyName} (${reason})`] };
     }
 
-}
-
-function empty(actions: SyncActions): boolean {
-    // TODO: This feels like a maintenance nightmare
-    return actions.delete.length === 0 &&
-        actions.deploy.length === 0 &&
-        actions.overwriteDevRego.length === 0 &&
-        actions.overwriteNonDevRego.length === 0;
 }
