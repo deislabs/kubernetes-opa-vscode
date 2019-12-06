@@ -57,43 +57,6 @@ async function trySyncFromWorkspace(clusterExplorer: k8s.ClusterExplorerV1, kube
     await displaySyncResult(actionResults, clusterExplorer);
 }
 
-async function displaySyncResult(actionResults: Errorable<null>[], clusterExplorer: k8s.ClusterExplorerV1): Promise<void> {
-    const failures = actionResults.filter((r) => failed(r)) as Failed[];
-    const successCount = actionResults.filter((r) => succeeded(r)).length;
-    if (failures.length > 0) {
-        const successCountInfo = successCount > 0 ? `.  (${successCount} other update(s) succeeded.)` : '';
-        await vscode.window.showErrorMessage(`${failures.length} update(s) failed: ${failures.map((f) => f.error[0]).join(', ')}${successCountInfo}`);
-        return;
-    }
-
-    if (successCount > 0) {
-        clusterExplorer.refresh();
-    }
-
-    await vscode.window.showInformationMessage(`Synced the cluster from the workspace`);
-}
-
-function createQuickPicks(actions: SyncActions) {
-    const deployQuickPicks = actions.deploy.map((f) => deployQuickPick(f, 'deploy to cluster', true));
-    const overwriteDevRegoQuickPicks = actions.overwriteDevRego.map((f) => deployQuickPick(f, 'deploy to cluster (overwriting existing)', true));
-    const overwriteNonDevRegoQuickPicks = actions.overwriteNonDevRego.map((f) => deployQuickPick(f, 'deploy to cluster (overwriting existing not deployed by VS Code)', false));
-    const deleteQuickPicks: ActionQuickPickItem[] = actions.delete.map((p) => ({ label: `${p}: delete from cluster`, picked: true, value: p, action: 'delete' }));
-    const actionQuickPicks = deployQuickPicks.concat(overwriteDevRegoQuickPicks).concat(overwriteNonDevRegoQuickPicks).concat(deleteQuickPicks);
-    return actionQuickPicks;
-}
-
-function deployQuickPick(file: RegoFile, actionDescription: string, picked: boolean): ActionQuickPickItem {
-    const displayFileName = vscode.workspace.asRelativePath(file.uri);
-    return {label: `${displayFileName}: ${actionDescription}`, picked: picked, value: file, action: 'deploy'};
-}
-
-function runAction(kubectl: k8s.KubectlV1, action: ActionQuickPickItem): Promise<Errorable<null>> {
-    switch (action.action) {
-        case 'deploy': return runDeployAction(kubectl, action.value);
-        case 'delete': return runDeleteAction(kubectl, action.value);
-    }
-}
-
 interface RegoFile {
     readonly uri: vscode.Uri;
     readonly content: string;
@@ -182,11 +145,32 @@ function hasMatchingRegoFile(regoFiles: ReadonlyArray<string>, policy: ConfigMap
     return regoFiles.some((f) => basename(f, '.rego') === policy.metadata.name);
 }
 
+function createQuickPicks(actions: SyncActions) {
+    const deployQuickPicks = actions.deploy.map((f) => deployQuickPick(f, 'deploy to cluster', true));
+    const overwriteDevRegoQuickPicks = actions.overwriteDevRego.map((f) => deployQuickPick(f, 'deploy to cluster (overwriting existing)', true));
+    const overwriteNonDevRegoQuickPicks = actions.overwriteNonDevRego.map((f) => deployQuickPick(f, 'deploy to cluster (overwriting existing not deployed by VS Code)', false));
+    const deleteQuickPicks: ActionQuickPickItem[] = actions.delete.map((p) => ({ label: `${p}: delete from cluster`, picked: true, value: p, action: 'delete' }));
+    const actionQuickPicks = deployQuickPicks.concat(overwriteDevRegoQuickPicks).concat(overwriteNonDevRegoQuickPicks).concat(deleteQuickPicks);
+    return actionQuickPicks;
+}
+
+function deployQuickPick(file: RegoFile, actionDescription: string, picked: boolean): ActionQuickPickItem {
+    const displayFileName = vscode.workspace.asRelativePath(file.uri);
+    return {label: `${displayFileName}: ${actionDescription}`, picked: picked, value: file, action: 'deploy'};
+}
+
+function runAction(kubectl: k8s.KubectlV1, action: ActionQuickPickItem): Promise<Errorable<null>> {
+    switch (action.action) {
+        case 'deploy': return runDeployAction(kubectl, action.value);
+        case 'delete': return runDeleteAction(kubectl, action.value);
+    }
+}
+
 async function runDeployAction(kubectl: k8s.KubectlV1, regoFile: RegoFile): Promise<Errorable<null>> {
     const regoFilePath = regoFile.uri.fsPath;
     const regoFileContent = regoFile.content;
     const deploymentInfo = new DeploymentInfo(regoFilePath, regoFileContent);
-    const deployResult = await createOrUpdateConfigMapFrom(deploymentInfo, kubectl);
+    const deployResult = await createOrUpdateConfigMapFrom(deploymentInfo, kubectl);  // TODO: we know which policies exist!  Should be able to skip doomed create attempts
     if (failed(deployResult)) {
         return { succeeded: false, error: [`deploying ${vscode.workspace.asRelativePath(regoFile.uri)} (${deployResult.error[0]})`] };
     }
@@ -203,4 +187,20 @@ async function runDeleteAction(kubectl: k8s.KubectlV1, policyName: string): Prom
         return { succeeded: false, error: [`deleting config map ${policyName} (${reason})`] };
     }
 
+}
+
+async function displaySyncResult(actionResults: Errorable<null>[], clusterExplorer: k8s.ClusterExplorerV1): Promise<void> {
+    const failures = actionResults.filter((r) => failed(r)) as Failed[];
+    const successCount = actionResults.filter((r) => succeeded(r)).length;
+    if (failures.length > 0) {
+        const successCountInfo = successCount > 0 ? `.  (${successCount} other update(s) succeeded.)` : '';
+        await vscode.window.showErrorMessage(`${failures.length} update(s) failed: ${failures.map((f) => f.error[0]).join(', ')}${successCountInfo}`);
+        return;
+    }
+
+    if (successCount > 0) {
+        clusterExplorer.refresh();
+    }
+
+    await vscode.window.showInformationMessage(`Synced the cluster from the workspace`);
 }
