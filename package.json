@@ -2,7 +2,7 @@
     "name": "kubernetes-opa-vscode",
     "displayName": "Open Policy Agent for Kubernetes",
     "description": "Work with Open Policy Agent as a Kubernetes admission controller",
-    "version": "0.0.1",
+    "version": "0.0.2",
     "preview": true,
     "publisher": "ms-kubernetes-tools",
     "license": "MIT",
