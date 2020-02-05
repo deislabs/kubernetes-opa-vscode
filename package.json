@@ -5,6 +5,7 @@
     "version": "0.0.2",
     "preview": true,
     "publisher": "ms-kubernetes-tools",
+    "icon": "images/opa.png",
     "license": "MIT",
     "repository": {
         "type": "git",
