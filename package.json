@@ -131,7 +131,7 @@
         "@types/tmp": "^0.1.0",
         "tslint": "^5.8.0",
         "typescript": "^3.7.2",
-        "vscode": "^1.1.6"
+        "vscode": "^1.1.37"
     },
     "extensionDependencies": [
         "ms-kubernetes-tools.vscode-kubernetes-tools",
